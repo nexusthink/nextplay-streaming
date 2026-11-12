@@ -1,39 +1,57 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  KeyRound,
-  Link2,
-  FileUp,
   Server,
   User,
   Lock,
   Sparkles,
-  CheckCircle2,
   AlertCircle,
   Loader2,
-  Trash2,
   ArrowRight,
   ShieldCheck,
   Cpu,
-  Tv,
   Minus,
   Square,
   X,
   Eye,
   EyeOff,
   Zap,
-  Activity,
   RotateCcw,
-  Radio,
-  PlusCircle,
-  ArrowLeft,
+  Mail,
+  LogOut,
+  CheckCircle2,
+  Shield,
+  Link2,
+  RefreshCw,
 } from 'lucide-react';
-import { PlaylistProfile } from '../types/iptv';
+import { PublicAppConfig, PublicServerOption, UserAccount } from '../types/iptv';
+import { getSavedGoogleAccounts } from '../services/authService';
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        oauth2?: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            prompt?: string;
+            callback: (response: { access_token?: string; error?: string }) => void;
+          }) => { requestAccessToken: (overrideConfig?: { prompt?: string }) => void };
+        };
+      };
+    };
+  }
+}
 
 export type UpscalingMode = 'off' | 'hd' | '4k';
 export type ZeroDelayMode = 'off' | 'equilibrado' | 'agressivo';
 
 interface AuthPortalScreenProps {
-  profiles: PlaylistProfile[];
+  currentUser: UserAccount | null;
+  servers: PublicServerOption[];
+  appConfig: PublicAppConfig;
+  autoConnectError?: string | null;
+  isAutoConnecting?: boolean;
   upscaling: UpscalingMode;
   onChangeUpscaling: (mode: UpscalingMode) => void;
   zeroDelay: ZeroDelayMode;
@@ -41,22 +59,30 @@ interface AuthPortalScreenProps {
   smartAudio: boolean;
   onChangeSmartAudio: (enabled: boolean) => void;
   onReplayIntro: () => void;
-  onConnectXtream: (
-    name: string,
-    serverUrl: string,
+  onLoginEmail: (email: string, password: string) => Promise<void>;
+  onRegisterEmail: (name: string, email: string, password: string) => Promise<void>;
+  onLoginGoogle: (payload: {
+    email?: string;
+    name?: string;
+    credential?: string;
+  }) => Promise<void>;
+  onLinkIptvAndConnect: (
+    serverId: string,
     username: string,
-    password: string,
-    format: 'm3u8' | 'ts'
+    password: string
   ) => Promise<void>;
-  onConnectM3uUrl: (name: string, m3uUrl: string) => Promise<void>;
-  onConnectM3uFile: (name: string, rawContent: string) => Promise<void>;
-  onSelectSavedProfile: (profile: PlaylistProfile) => Promise<void>;
-  onDeleteProfile: (profileId: string) => void;
+  onRetryAutoConnect?: () => Promise<void>;
+  onLogoutAccount: () => void;
+  onOpenAdminPanel: () => void;
   onEnterDemoMode: () => void;
 }
 
 export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
-  profiles,
+  currentUser,
+  servers,
+  appConfig,
+  autoConnectError,
+  isAutoConnecting = false,
   upscaling,
   onChangeUpscaling,
   zeroDelay,
@@ -64,46 +90,56 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
   smartAudio,
   onChangeSmartAudio,
   onReplayIntro,
-  onConnectXtream,
-  onConnectM3uUrl,
-  onConnectM3uFile,
-  onSelectSavedProfile,
-  onDeleteProfile,
+  onLoginEmail,
+  onRegisterEmail,
+  onLoginGoogle,
+  onLinkIptvAndConnect,
+  onRetryAutoConnect,
+  onLogoutAccount,
+  onOpenAdminPanel,
   onEnterDemoMode,
 }) => {
-  const [activeMode, setActiveMode] = useState<'xtream' | 'm3u_url' | 'm3u_file'>('xtream');
   const bgCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Campos Login e Senha (Xtream Codes)
-  const [xtreamName, setXtreamName] = useState('');
-  const [serverUrl, setServerUrl] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [streamFormat, setStreamFormat] = useState<'m3u8' | 'ts'>('m3u8');
+  // Estado Etapa 1: Login ou Cadastro da Conta do Cliente
+  const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
+  const [accountName, setAccountName] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [showAccountPass, setShowAccountPass] = useState(false);
 
-  // Campos Lista M3U
-  const [m3uName, setM3uName] = useState('');
-  const [m3uUrl, setM3uUrl] = useState('');
+  // Modal de Login com Google
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
+  const [googleEmail, setGoogleEmail] = useState('');
+  const [googleName, setGoogleName] = useState('');
+
+  // Estado Etapa 2: Seleção do Servidor (definido pelo Admin) + Usuário e Senha IPTV
+  const [selectedServerId, setSelectedServerId] = useState<string>('');
+  const [iptvUsername, setIptvUsername] = useState('');
+  const [iptvPassword, setIptvPassword] = useState('');
+  const [showIptvPassword, setShowIptvPassword] = useState(false);
 
   // Status de carregamento e erros
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingText, setLoadingText] = useState('Sincronizando com o motor Express...');
+  const [loadingText, setLoadingText] = useState('Autenticando...');
   const [error, setError] = useState<string | null>(null);
-
-  const userProfiles = profiles.filter((p) => p.type !== 'demo');
-  // Sempre prioriza a tela de Perfis estilo Netflix / Streaming
-  const [viewState, setViewState] = useState<'profiles' | 'form'>('profiles');
-  const [isManagingProfiles, setIsManagingProfiles] = useState(false);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
+  // Pré-seleciona o servidor padrão definido pelo Admin ou o já vinculado ao usuário
   useEffect(() => {
-    if (userProfiles.length === 0 && viewState === 'profiles') {
-      setViewState('form');
+    if (currentUser?.iptvLink) {
+      setSelectedServerId(currentUser.iptvLink.serverId);
+      setIptvUsername(currentUser.iptvLink.username);
+      setIptvPassword(currentUser.iptvLink.password);
+      return;
     }
-  }, [userProfiles.length, viewState]);
+    if (servers.length > 0 && !selectedServerId) {
+      const def = servers.find((s) => s.isDefault) || servers[0];
+      if (def) setSelectedServerId(def.id);
+    }
+  }, [servers, currentUser, selectedServerId]);
 
-  // Efeito de Ondas Sonoras Cyberpunk Interativas no Fundo do Command Deck
+  // Efeito de Ondas Sonoras Cyberpunk Interativas no Fundo
   useEffect(() => {
     const canvas = bgCanvasRef.current;
     if (!canvas) return;
@@ -124,7 +160,6 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
 
-      // 3 ondas harmônicas suaves de áudio no rodapé
       const lines = [
         { color: 'rgba(0, 242, 254, 0.16)', amp: 24 * dpr, freq: 0.003, speed: 0.002 },
         { color: 'rgba(16, 185, 129, 0.12)', amp: 18 * dpr, freq: 0.0045, speed: -0.0015 },
@@ -156,83 +191,444 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     };
   }, []);
 
-  const handleXtreamSubmit = async (e: React.FormEvent) => {
+  // Submit Etapa 1: Login ou Registro por E-mail
+  const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!serverUrl.trim() || !username.trim() || !password.trim()) {
-      setError('Preencha a URL do Servidor (DNS), o Usuário e a Senha.');
+    setError(null);
+
+    if (!accountEmail.trim() || !accountPassword.trim()) {
+      setError('Informe seu e-mail e sua senha.');
       return;
     }
 
     setIsLoading(true);
-    setLoadingText('Autenticando via Xtream Engine e indexando catálogo...');
-    setError(null);
+    setLoadingText(
+      authTab === 'login'
+        ? 'Entrando na sua conta e verificando lista vinculada...'
+        : 'Criando sua conta NextPlay...'
+    );
 
     try {
-      const profileTitle = xtreamName.trim() || `NextPlay (${username.trim()})`;
-      await onConnectXtream(profileTitle, serverUrl, username, password, streamFormat);
+      if (authTab === 'login') {
+        await onLoginEmail(accountEmail.trim(), accountPassword);
+      } else {
+        await onRegisterEmail(
+          accountName.trim() || accountEmail.split('@')[0],
+          accountEmail.trim(),
+          accountPassword
+        );
+      }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Falha na autenticação Xtream Codes. Verifique o DNS, usuário e senha.'
-      );
+      setError(err instanceof Error ? err.message : 'Erro ao autenticar conta.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleM3uUrlSubmit = async (e: React.FormEvent) => {
+  // Carrega a biblioteca oficial Google Identity Services se houver googleClientId configurado
+  useEffect(() => {
+    const clientId = appConfig.googleClientId?.trim();
+    if (!clientId) return;
+    if (document.getElementById('google-gsi-client-script')) return;
+    const script = document.createElement('script');
+    script.id = 'google-gsi-client-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+  }, [appConfig.googleClientId]);
+
+  // Escuta o retorno da Janela Popup do Google (postMessage)
+  useEffect(() => {
+    const handlePopupMessage = async (event: MessageEvent) => {
+      if (event.data?.type !== 'NEXTPLAY_GOOGLE_AUTH_SUCCESS') return;
+      const { email, name, avatarUrl } = event.data;
+      if (!email) return;
+
+      setIsGoogleModalOpen(false);
+      setIsLoading(true);
+      setLoadingText('Autenticando com Google e verificando sua lista...');
+      setError(null);
+      try {
+        await onLoginGoogle({
+          email: String(email).trim(),
+          name: String(name || email.split('@')[0]).trim(),
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Falha no login com Google.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    window.addEventListener('message', handlePopupMessage);
+    return () => window.removeEventListener('message', handlePopupMessage);
+  }, [onLoginGoogle]);
+
+  // Abre a Janela Popup Direta de Seleção de Conta Google
+  const handleOpenGooglePopup = () => {
+    setError(null);
+    const clientId = appConfig.googleClientId?.trim();
+
+    // 1. Se o Admin configurou um Google OAuth Client ID oficial, abre o popup nativo accounts.google.com
+    if (clientId && window.google?.accounts?.oauth2) {
+      try {
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          callback: async (tokenResponse) => {
+            if (tokenResponse.error || !tokenResponse.access_token) {
+              setError('Autenticação Google cancelada ou não autorizada.');
+              return;
+            }
+            setIsLoading(true);
+            setLoadingText('Vinculando sua conta Google...');
+            try {
+              const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+              });
+              const profile = await userInfoRes.json();
+              await onLoginGoogle({
+                email: profile.email,
+                name: profile.name || profile.given_name || profile.email?.split('@')[0],
+              });
+            } catch (err) {
+              setError(
+                err instanceof Error ? err.message : 'Erro ao obter dados da conta Google.'
+              );
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      } catch {
+        // Fallback para a janela popup direta abaixo
+      }
+    }
+
+    // No aplicativo Android Nativo (Celular, Tablet, Android TV), WebViews não usam window.opener em popups externos
+    const isAndroidWebView =
+      Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+      /;\s*wv\)/i.test(navigator.userAgent);
+    if (isAndroidWebView) {
+      setIsGoogleModalOpen(true);
+      return;
+    }
+
+    // 2. Abre a Janela Popup Externa Direta (estilo Seletor de Contas Google)
+    const width = 450;
+    const height = 580;
+    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+
+    const popup = window.open(
+      '',
+      'NextPlayGoogleSignInPopup',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no,location=no`
+    );
+
+    if (!popup) {
+      // Caso o navegador bloqueie popups, abre o seletor na tela
+      setIsGoogleModalOpen(true);
+      return;
+    }
+
+    const savedAccounts = getSavedGoogleAccounts();
+    const appTitle = (appConfig.appName || 'NextPlay').replace(/</g, '&lt;');
+
+    const savedAccountsHtml = savedAccounts
+      .map((acc) => {
+        const initial = (acc.name || acc.email || 'G').trim().charAt(0).toUpperCase();
+        const safeEmail = acc.email.replace(/"/g, '&quot;');
+        const safeName = (acc.name || acc.email.split('@')[0]).replace(/"/g, '&quot;');
+        return `
+          <button type="button" class="acc-item" data-email="${safeEmail}" data-name="${safeName}">
+            <div class="acc-avatar">${initial}</div>
+            <div class="acc-info">
+              <div class="acc-name">${safeName}</div>
+              <div class="acc-email">${safeEmail}</div>
+            </div>
+          </button>
+        `;
+      })
+      .join('');
+
+    popup.document.open();
+    popup.document.write(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fazer login nas Contas do Google</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Roboto, Arial, sans-serif; }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #202124;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    .header {
+      padding: 14px 24px;
+      border-bottom: 1px solid #dadce0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: #5f6368;
+    }
+    .container {
+      flex: 1;
+      padding: 32px 36px 24px;
+      max-width: 450px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 400;
+      margin: 0 0 8px;
+      color: #202124;
+      text-align: center;
+    }
+    .subtitle {
+      font-size: 16px;
+      color: #202124;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .subtitle strong {
+      color: #1a73e8;
+      font-weight: 500;
+    }
+    .acc-list {
+      border-top: 1px solid #dadce0;
+      margin-bottom: 16px;
+    }
+    .acc-item {
+      width: 100%;
+      background: none;
+      border: none;
+      border-bottom: 1px solid #dadce0;
+      padding: 12px 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s;
+    }
+    .acc-item:hover {
+      background: #f8f9fa;
+    }
+    .acc-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #1a73e8;
+      color: #fff;
+      font-weight: 600;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .acc-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: #3c4043;
+    }
+    .acc-email {
+      font-size: 12px;
+      color: #5f6368;
+    }
+    .form-section {
+      margin-top: 14px;
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #5f6368;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 13px 15px;
+      font-size: 15px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      outline: none;
+      color: #202124;
+    }
+    input:focus {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 1px #1a73e8;
+    }
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 24px;
+    }
+    .btn-cancel {
+      background: none;
+      border: none;
+      color: #1a73e8;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
+    .btn-cancel:hover {
+      background: #f1f3f4;
+    }
+    .btn-submit {
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-submit:hover {
+      background: #1557b0;
+    }
+    .footer-note {
+      font-size: 12px;
+      color: #5f6368;
+      line-height: 1.5;
+      margin-top: 28px;
+      border-top: 1px solid #f1f3f4;
+      padding-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg width="18" height="18" viewBox="0 0 24 24">
+      <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"/>
+      <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"/>
+      <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"/>
+      <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"/>
+    </svg>
+    <span>Fazer login com o Google</span>
+  </div>
+  <div class="container">
+    <h1>Escolha uma conta</h1>
+    <div class="subtitle">para prosseguir para <strong>${appTitle}</strong></div>
+
+    ${savedAccountsHtml ? `<div class="acc-list" id="savedList">${savedAccountsHtml}</div>` : ''}
+
+    <form id="googleForm" class="form-section">
+      <div class="field">
+        <label>E-mail do Google (Gmail)</label>
+        <input type="email" id="gEmail" required autocomplete="email" placeholder="seuemail@gmail.com" autofocus />
+      </div>
+      <div class="field">
+        <label>Seu nome (opcional)</label>
+        <input type="text" id="gName" autocomplete="name" placeholder="Seu nome" />
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-cancel" onclick="window.close()">Cancelar</button>
+        <button type="submit" class="btn-submit">Continuar</button>
+      </div>
+    </form>
+
+    <div class="footer-note">
+      Para continuar, o Google compartilhará seu nome e endereço de e-mail com o aplicativo <strong>${appTitle}</strong> para vincular sua lista IPTV.
+    </div>
+  </div>
+  <script>
+    function finishLogin(email, name) {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'NEXTPLAY_GOOGLE_AUTH_SUCCESS',
+          email: email,
+          name: name || email.split('@')[0]
+        }, '*');
+      }
+      window.close();
+    }
+    document.querySelectorAll('.acc-item').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        finishLogin(btn.getAttribute('data-email'), btn.getAttribute('data-name'));
+      });
+    });
+    document.getElementById('googleForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var email = document.getElementById('gEmail').value.trim();
+      var name = document.getElementById('gName').value.trim();
+      if (!email) return;
+      finishLogin(email, name);
+    });
+  </script>
+</body>
+</html>`);
+    popup.document.close();
+    popup.focus();
+  };
+
+  // Submit Login com Google (Fallback caso o navegador bloqueie popups)
+  const handleGoogleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!m3uUrl.trim()) {
-      setError('Informe a URL da sua playlist .M3U ou .M3U8.');
+    if (!googleEmail.trim() || !googleEmail.includes('@')) {
+      setError('Informe um e-mail Google válido.');
+      return;
+    }
+    setIsGoogleModalOpen(false);
+    setIsLoading(true);
+    setLoadingText('Autenticando com Google e verificando sua lista...');
+    setError(null);
+    try {
+      await onLoginGoogle({
+        email: googleEmail.trim(),
+        name: googleName.trim() || googleEmail.split('@')[0],
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha no login com Google.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Submit Etapa 2: Vincular Servidor + Usuário e Senha IPTV
+  const handleLinkIptvSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!selectedServerId) {
+      setError('Selecione o servidor antes de continuar.');
+      return;
+    }
+    if (!iptvUsername.trim() || !iptvPassword.trim()) {
+      setError('Informe o Usuário e a Senha da sua lista IPTV.');
       return;
     }
 
     setIsLoading(true);
-    setLoadingText('Baixando playlist via Micro-Servidor Express...');
-    setError(null);
+    setLoadingText('Validando acesso no servidor e vinculando lista à sua conta...');
 
     try {
-      const profileTitle = m3uName.trim() || `Playlist #${userProfiles.length + 1}`;
-      await onConnectM3uUrl(profileTitle, m3uUrl);
+      await onLinkIptvAndConnect(selectedServerId, iptvUsername.trim(), iptvPassword.trim());
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : 'Não foi possível carregar a URL M3U. Verifique se o link está online.'
+          : 'Não foi possível validar o usuário e senha neste servidor.'
       );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsLoading(true);
-    setLoadingText(`Indexando canais de "${file.name}" em memória...`);
-    setError(null);
-
-    try {
-      const text = await file.text();
-      const cleanName = m3uName.trim() || file.name.replace(/\.(m3u8?|txt)$/i, '');
-      await onConnectM3uFile(cleanName, text);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao processar arquivo M3U.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSavedProfileClick = async (prof: PlaylistProfile) => {
-    setIsLoading(true);
-    setLoadingText(`Inicializando slot "${prof.name}"...`);
-    setError(null);
-    try {
-      await onSelectSavedProfile(prof);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao conectar no slot salvo.');
     } finally {
       setIsLoading(false);
     }
@@ -249,7 +645,7 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
         <div className="absolute bottom-0 right-1/4 w-[420px] h-[420px] rounded-full bg-teal-500/10 blur-[150px]" />
       </div>
 
-      {/* Header Superior Customizado com Prisma Duplo NextPlay */}
+      {/* Header Superior */}
       <header
         className="h-14 px-5 flex items-center justify-between border-b border-cyan-500/15 bg-[#090e15]/85 backdrop-blur-xl z-20 shrink-0"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
@@ -258,7 +654,6 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
           className="flex items-center gap-3"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          {/* Emblema Duplo Prisma NextPlay */}
           <div className="w-9 h-9 rounded-xl bg-[#0e1722] border border-cyan-400/40 flex items-center justify-center shadow-neon-cyan">
             <svg viewBox="0 0 40 40" className="w-6 h-6">
               <path d="M9 9 L23 20 L9 31 Z" fill="#0891b2" opacity="0.75" />
@@ -266,8 +661,9 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
             </svg>
           </div>
           <div className="flex items-baseline gap-1">
-            <span className="font-black tracking-tight text-xl text-white">Next</span>
-            <span className="font-black tracking-tight text-xl bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">Play</span>
+            <span className="font-black tracking-tight text-xl text-white">
+              {appConfig.appName || 'NextPlay'}
+            </span>
           </div>
         </div>
 
@@ -277,22 +673,34 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
         >
           <button
             type="button"
+            onClick={onOpenAdminPanel}
+            title="Abrir Painel Administrativo (/admin)"
+            className="px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <Shield className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Painel Admin</span>
+          </button>
+
+          <button
+            type="button"
             onClick={onReplayIntro}
             title="Repetir Abertura"
-            className="px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition"
+            className="px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Intro</span>
           </button>
 
-          <button
-            type="button"
-            onClick={onEnterDemoMode}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-teal-500/10 hover:from-cyan-500/30 hover:to-teal-500/20 border border-cyan-400/40 text-cyan-200 text-xs font-semibold transition flex items-center gap-1.5"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
-            <span>Demonstração</span>
-          </button>
+          {appConfig.allowDemoMode && (
+            <button
+              type="button"
+              onClick={onEnterDemoMode}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500/20 to-teal-500/10 hover:from-cyan-500/30 hover:to-teal-500/20 border border-cyan-400/40 text-cyan-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
+              <span>Demonstração</span>
+            </button>
+          )}
 
           <div className="hidden sm:flex items-center gap-1 pl-2 border-l border-slate-800 text-slate-400">
             <button
@@ -320,427 +728,399 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
         </div>
       </header>
 
-      {/* Cockpit Principal NextPlay */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-6 z-10 flex flex-col justify-center overflow-y-auto">
-        {viewState === 'profiles' ? (
-          /* MODO SELEÇÃO DE PERFIL ESTILO NETFLIX / STREAMING */
-          <div className="flex-1 flex flex-col justify-center items-center py-4 sm:py-8 max-w-4xl mx-auto w-full">
-            {/* Header da Seleção de Perfis */}
-            <div className="text-center mb-8">
+      {/* Conteúdo Central */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-6 z-10 flex flex-col justify-center overflow-y-auto">
+        {isAutoConnecting ? (
+          /* TELA DE CARREGAMENTO AUTOMÁTICO DA LISTA VINCULADA */
+          <div className="max-w-md mx-auto w-full bg-[#0b121a]/95 border border-cyan-500/30 rounded-3xl p-8 text-center shadow-2xl space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 flex items-center justify-center mx-auto text-cyan-400">
+              <Loader2 className="w-8 h-8 animate-spin" />
+            </div>
+            <h2 className="text-xl font-black text-white">Carregando sua Lista Vinculada</h2>
+            <p className="text-xs text-slate-400">
+              Olá, <strong className="text-white">{currentUser?.name}</strong>! Conectando
+              automaticamente ao servidor{' '}
+              <strong className="text-cyan-300">
+                {currentUser?.iptvLink?.serverName || 'IPTV'}
+              </strong>
+              ...
+            </p>
+          </div>
+        ) : !currentUser ? (
+          /* ===================================================================
+             ETAPA 1: LOGIN OU CADASTRO DE CONTA (E-MAIL OU GOOGLE)
+          =================================================================== */
+          <div className="max-w-md mx-auto w-full py-2">
+            <div className="mb-6 text-center">
               <div className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-cyan-400 mb-2">
                 <Sparkles className="w-3.5 h-3.5" />
-                NextPlay Profile Gateway
+                Conta Unificada NextPlay
               </div>
-              <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight drop-shadow-md">
-                Quem está assistindo?
+              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                {authTab === 'login' ? 'Entre na sua conta' : 'Crie sua conta grátis'}
               </h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-2 max-w-md mx-auto">
-                Selecione seu perfil para acessar o catálogo de canais, filmes e séries instantaneamente.
+              <p className="text-xs sm:text-sm text-slate-400 mt-1.5">
+                Sua lista IPTV fica vinculada à sua conta. Entre com seu e-mail ou Google para
+                carregar seus canais automaticamente.
               </p>
             </div>
 
-            {error && (
-              <div className="mb-6 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2.5 max-w-md">
-                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Grid dos Perfis Estilo Netflix / Streaming */}
-            <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-8 max-w-4xl mx-auto mb-10">
-              {userProfiles.map((prof, idx) => {
-                const gradients = [
-                  'from-cyan-400 via-teal-500 to-blue-600',
-                  'from-fuchsia-500 via-purple-600 to-indigo-700',
-                  'from-emerald-400 via-teal-500 to-cyan-600',
-                  'from-amber-400 via-orange-500 to-rose-600',
-                ];
-                const bgGrad = gradients[idx % gradients.length];
-                const initial = prof.name ? prof.name.trim().charAt(0).toUpperCase() : 'P';
-
-                return (
-                  <div
-                    key={prof.id}
-                    onClick={() => !isLoading && handleSavedProfileClick(prof)}
-                    className="group relative w-44 sm:w-52 h-64 sm:h-72 rounded-2xl bg-[#0b121b]/90 border border-slate-800 hover:border-cyan-400 p-5 flex flex-col items-center justify-between transition-all duration-300 transform hover:-translate-y-2 hover:scale-105 hover:shadow-[0_16px_40px_rgba(0,242,254,0.35)] cursor-pointer overflow-hidden backdrop-blur-xl"
-                  >
-                    {/* Linha Neon Superior no Hover */}
-                    <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                    {/* Botão de Excluir Perfil */}
-                    {isManagingProfiles && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteProfile(prof.id);
-                        }}
-                        className="absolute top-3 right-3 p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 transition z-10"
-                        title="Remover Perfil"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-
-                    {/* Avatar do Perfil */}
-                    <div className="flex flex-col items-center mt-2">
-                      <div
-                        className={`w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br ${bgGrad} flex items-center justify-center text-4xl sm:text-5xl font-black text-white shadow-xl border border-white/20 group-hover:scale-105 group-hover:rotate-1 transition-all duration-300`}
-                      >
-                        {initial}
-                      </div>
-
-                      {/* Nome do Perfil */}
-                      <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-cyan-300 transition line-clamp-1 text-center mt-3">
-                        {prof.name}
-                      </h3>
-
-                      {/* Badge Xtream / M3U */}
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 mt-1">
-                        {prof.type === 'xtream' ? 'Xtream Codes' : 'Lista M3U'}
-                      </span>
-                    </div>
-
-                    {/* Botão Acessar Perfil */}
-                    <div className="w-full">
-                      <button
-                        type="button"
-                        disabled={isLoading}
-                        className="w-full py-2 rounded-xl bg-[#101822] group-hover:bg-cyan-400 text-slate-300 group-hover:text-slate-950 text-xs font-bold transition flex items-center justify-center gap-1.5 border border-slate-700/60 group-hover:border-cyan-400 shadow-neon-cyan"
-                      >
-                        {isLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <>
-                            <span>Entrar</span>
-                            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Card "+ Adicionar Perfil" */}
-              <div
-                onClick={() => setViewState('form')}
-                className="group w-44 sm:w-52 h-64 sm:h-72 rounded-2xl border-2 border-dashed border-slate-700/80 hover:border-cyan-400/80 bg-[#070c12]/60 hover:bg-cyan-500/10 p-5 flex flex-col items-center justify-center transition-all duration-300 transform hover:-translate-y-2 hover:scale-105 cursor-pointer backdrop-blur-xl"
-              >
-                <div className="w-20 h-20 rounded-2xl bg-slate-800/80 group-hover:bg-cyan-500/20 border border-slate-700 flex items-center justify-center text-slate-400 group-hover:text-cyan-300 transition-all mb-3 group-hover:scale-105">
-                  <PlusCircle className="w-10 h-10" />
-                </div>
-                <span className="text-sm font-bold text-slate-300 group-hover:text-white transition">
-                  Adicionar Perfil
-                </span>
-                <span className="text-[10px] text-slate-500 text-center mt-1 font-mono">
-                  Novo Login ou Lista
-                </span>
-              </div>
-            </div>
-
-            {/* Ações Inferiores da Seleção de Perfil */}
-            <div className="flex flex-wrap items-center justify-center gap-3 mb-8">
-              <button
-                type="button"
-                onClick={() => setIsManagingProfiles(!isManagingProfiles)}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${
-                  isManagingProfiles
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
-                    : 'bg-[#101822] text-slate-400 hover:text-white border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{isManagingProfiles ? 'Concluir Gerenciamento' : 'Gerenciar Perfis'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onEnterDemoMode}
-                className="px-4 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 text-xs font-semibold transition flex items-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Entrar em Demonstração</span>
-              </button>
-            </div>
-
-            {/* Configurações Rápidas de GPU / DSP no Rodapé do Perfil */}
-            <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] font-mono text-slate-400 pt-4 border-t border-slate-800/60 w-full max-w-lg">
-              <div className="flex items-center gap-1.5">
-                <Cpu className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Upscaling: <strong className="text-cyan-300 uppercase">{upscaling}</strong></span>
-              </div>
-              <span className="text-slate-700">•</span>
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Buffer: <strong className="text-cyan-300 uppercase">{zeroDelay}</strong></span>
-              </div>
-              <span className="text-slate-700">•</span>
-              <div className="flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                <span>Smart DSP: <strong className="text-cyan-300">{smartAudio ? 'ATIVO' : 'DESLIGADO'}</strong></span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* MODO FORMULÁRIO (NOVA CONEXÃO / ADICIONAR PERFIL) - DESIGN LIMPO & MODERNO */
-          <div className="max-w-2xl mx-auto w-full py-2">
-            {/* Botão de Retorno para Seleção de Perfis */}
-            <div className="mb-6 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setViewState('profiles')}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 hover:text-white text-xs font-semibold transition border border-slate-700/80 group"
-              >
-                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-                <span>Voltar para Perfis</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onEnterDemoMode}
-                className="px-3.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-semibold transition border border-cyan-400/30 flex items-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Testar Modo Demonstração</span>
-              </button>
-            </div>
-
-            {/* Cabeçalho do Formulário */}
-            <div className="mb-6 text-center">
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                Adicionar Nova Conexão
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1.5 max-w-md mx-auto">
-                Insira os dados do seu provedor Xtream Codes ou envie sua lista M3U para carregar o catálogo completo.
-              </p>
-            </div>
-
-            {/* Card do Formulário */}
             <div className="bg-[#0b121a]/95 backdrop-blur-2xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-500 via-teal-400 to-blue-500 opacity-80" />
 
-              {/* Abas de Conexão */}
-              <div className="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-[#060a0f] border border-slate-800/80 mb-6">
+              {/* Abas Entrar vs Criar Conta */}
+              <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-[#060a0f] border border-slate-800/80 mb-5">
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveMode('xtream');
+                    setAuthTab('login');
                     setError(null);
                   }}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
-                    activeMode === 'xtream'
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    authTab === 'login'
                       ? 'bg-gradient-to-r from-cyan-500/25 to-teal-500/15 text-cyan-200 border border-cyan-400/50 shadow-neon-cyan'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
                   }`}
                 >
-                  <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Login & Senha</span>
+                  Entrar na Conta
                 </button>
 
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveMode('m3u_url');
+                    setAuthTab('register');
                     setError(null);
                   }}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
-                    activeMode === 'm3u_url'
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    authTab === 'register'
                       ? 'bg-gradient-to-r from-cyan-500/25 to-teal-500/15 text-cyan-200 border border-cyan-400/50 shadow-neon-cyan'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
                   }`}
                 >
-                  <Link2 className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Link M3U</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveMode('m3u_file');
-                    setError(null);
-                  }}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
-                    activeMode === 'm3u_file'
-                      ? 'bg-gradient-to-r from-cyan-500/25 to-teal-500/15 text-cyan-200 border border-cyan-400/50 shadow-neon-cyan'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                  }`}
-                >
-                  <FileUp className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Arquivo M3U</span>
+                  Criar Nova Conta
                 </button>
               </div>
 
               {error && (
-                <div className="mb-5 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2.5">
+                <div className="mb-4 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2.5">
                   <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
               )}
 
-              {/* MODO 01: XTREAM CODES LOGIN E SENHA */}
-              {activeMode === 'xtream' && (
-                <form onSubmit={handleXtreamSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
-                    <div className="sm:col-span-5">
-                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                        Nome do Perfil
-                      </label>
-                      <input
-                        type="text"
-                        value={xtreamName}
-                        onChange={(e) => setXtreamName(e.target.value)}
-                        placeholder="Ex: Minha Conta"
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
-                      />
-                    </div>
+              {/* Botão Login com Google (Abre Janela Popup Direta do Google) */}
+              <button
+                type="button"
+                disabled={isLoading}
+                onClick={handleOpenGooglePopup}
+                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-gray-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-2.5 transition shadow-md cursor-pointer mb-5"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#EA4335"
+                    d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"
+                  />
+                </svg>
+                <span>Continuar com conta Google</span>
+              </button>
 
-                    <div className="sm:col-span-7">
-                      <label className="block text-xs font-semibold text-cyan-300 mb-1.5">
-                        Servidor (URL / Host) *
-                      </label>
-                      <div className="relative">
-                        <Server className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          required
-                          value={serverUrl}
-                          onChange={(e) => setServerUrl(e.target.value)}
-                          placeholder="http://servidor.com:8080"
-                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
-                        />
-                      </div>
-                    </div>
-                  </div>
+              <div className="relative flex py-1 items-center mb-5">
+                <div className="flex-grow border-t border-slate-800" />
+                <span className="flex-shrink mx-3 text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
+                  ou com seu e-mail
+                </span>
+                <div className="flex-grow border-t border-slate-800" />
+              </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div>
-                      <label className="block text-xs font-semibold text-cyan-300 mb-1.5">
-                        Usuário *
-                      </label>
-                      <div className="relative">
-                        <User className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          required
-                          value={username}
-                          onChange={(e) => setUsername(e.target.value)}
-                          placeholder="Seu usuário"
-                          className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-cyan-300 mb-1.5">
-                        Senha *
-                      </label>
-                      <div className="relative">
-                        <Lock className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          required
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="Sua senha"
-                          className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((v) => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-300 p-1"
-                        >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-xs text-slate-400">Formato da Transmissão</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setStreamFormat('m3u8')}
-                        className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition ${
-                          streamFormat === 'm3u8'
-                            ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
-                            : 'bg-[#070d14] border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        HLS (.m3u8)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStreamFormat('ts')}
-                        className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition ${
-                          streamFormat === 'ts'
-                            ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
-                            : 'bg-[#070d14] border-slate-800 text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        TS Raw (.ts)
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full mt-3 py-3 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-400 to-cyan-300 text-slate-950 font-black text-sm tracking-wide uppercase hover:brightness-105 transition shadow-neon-cyan flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>{loadingText}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Conectar e Acessar Catálogo</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
-              )}
-
-              {/* MODO 02: LINK REMOTO M3U */}
-              {activeMode === 'm3u_url' && (
-                <form onSubmit={handleM3uUrlSubmit} className="space-y-4">
+              <form onSubmit={handleAccountSubmit} className="space-y-4">
+                {authTab === 'register' && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      Nome do Perfil
-                    </label>
-                    <input
-                      type="text"
-                      value={m3uName}
-                      onChange={(e) => setM3uName(e.target.value)}
-                      placeholder="Ex: Minha Lista de Canais"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-cyan-300 mb-1.5">
-                      URL da Playlist (.M3U / .M3U8) *
+                      Seu Nome
                     </label>
                     <div className="relative">
-                      <Link2 className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <User className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
-                        type="url"
+                        type="text"
                         required
-                        value={m3uUrl}
-                        onChange={(e) => setM3uUrl(e.target.value)}
-                        placeholder="http://servidor.com/get.php?username=...&password=..."
+                        value={accountName}
+                        onChange={(e) => setAccountName(e.target.value)}
+                        placeholder="Como podemos te chamar?"
                         className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
                       />
                     </div>
                   </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-cyan-300 mb-1.5">
+                    E-mail da Conta *
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      value={accountEmail}
+                      onChange={(e) => setAccountEmail(e.target.value)}
+                      placeholder="seuemail@exemplo.com"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-cyan-300 mb-1.5">
+                    Senha *
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showAccountPass ? 'text' : 'password'}
+                      required
+                      value={accountPassword}
+                      onChange={(e) => setAccountPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAccountPass((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-300 p-1 cursor-pointer"
+                    >
+                      {showAccountPass ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-400 to-cyan-300 text-slate-950 font-black text-sm tracking-wide uppercase hover:brightness-105 transition shadow-neon-cyan flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{loadingText}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{authTab === 'login' ? 'Entrar na Conta' : 'Criar Minha Conta'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : (
+          /* ===================================================================
+             ETAPA 2: CONTA LOGADA -> SELECIONAR SERVIDOR E INSERIR USUÁRIO/SENHA IPTV
+          =================================================================== */
+          <div className="max-w-xl mx-auto w-full py-2">
+            {/* Barra da Conta Logada */}
+            <div className="mb-5 p-4 rounded-2xl bg-[#0b121a]/90 border border-cyan-500/25 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-teal-600 text-slate-950 font-black text-base flex items-center justify-center">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">{currentUser.name}</span>
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                      {currentUser.provider === 'google' ? 'Conta Google' : 'Conta E-mail'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">{currentUser.email}</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onLogoutAccount}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Trocar Conta
+              </button>
+            </div>
+
+            {/* Cabeçalho Etapa 2 */}
+            <div className="mb-5 text-center">
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-emerald-400 mb-1">
+                <Link2 className="w-3.5 h-3.5" />
+                Vínculo Automático de Lista IPTV
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                Vincule seu Acesso IPTV
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-md mx-auto">
+                Selecione o seu servidor abaixo e digite seu usuário e senha IPTV. Sua lista ficará
+                salva na sua conta para os próximos acessos.
+              </p>
+            </div>
+
+            <div className="bg-[#0b121a]/95 backdrop-blur-2xl border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-400 via-cyan-400 to-teal-500 opacity-80" />
+
+              {(error || autoConnectError) && (
+                <div className="mb-5 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <span>{error || autoConnectError}</span>
+                  </div>
+                  {currentUser.iptvLink && onRetryAutoConnect && (
+                    <button
+                      type="button"
+                      onClick={onRetryAutoConnect}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-bold shrink-0 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      Tentar Novamente
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {servers.length === 0 ? (
+                <div className="p-6 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-3">
+                  <Server className="w-8 h-8 text-amber-400 mx-auto" />
+                  <p className="text-sm font-bold text-amber-200">
+                    Nenhum servidor IPTV ativo no momento
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    O administrador precisa cadastrar ou ativar ao menos um servidor no Painel
+                    Admin.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onOpenAdminPanel}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-bold cursor-pointer"
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    Abrir Painel Admin
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleLinkIptvSubmit} className="space-y-5">
+                  {/* SELETOR DE SERVIDOR DEFINIDO PELO ADMIN */}
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-cyan-300 mb-2">
+                      1. Escolha o Servidor *
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {servers.map((srv) => {
+                        const isSelected = selectedServerId === srv.id;
+                        return (
+                          <button
+                            key={srv.id}
+                            type="button"
+                            onClick={() => setSelectedServerId(srv.id)}
+                            className={`p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                              isSelected
+                                ? 'bg-cyan-500/15 border-cyan-400 shadow-neon-cyan'
+                                : 'bg-[#070d14] border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                  isSelected
+                                    ? 'bg-cyan-400 text-slate-950'
+                                    : 'bg-slate-800 text-slate-400'
+                                }`}
+                              >
+                                <Server className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-white truncate">{srv.name}</p>
+                                <p className="text-[10px] text-slate-400">
+                                  {srv.region || 'Brasil'} • Online
+                                </p>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* CREDENCIAIS DO USUÁRIO IPTV */}
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-cyan-300 mb-2">
+                      2. Dados de Acesso da sua Lista *
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                          Usuário IPTV
+                        </label>
+                        <div className="relative">
+                          <User className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            required
+                            value={iptvUsername}
+                            onChange={(e) => setIptvUsername(e.target.value)}
+                            placeholder="Seu usuário"
+                            className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                          Senha IPTV
+                        </label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 text-cyan-400/70 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type={showIptvPassword ? 'text' : 'password'}
+                            required
+                            value={iptvPassword}
+                            onChange={(e) => setIptvPassword(e.target.value)}
+                            placeholder="Sua senha"
+                            className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowIptvPassword((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-300 p-1 cursor-pointer"
+                          >
+                            {showIptvPassword ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full mt-3 py-3 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-400 to-cyan-300 text-slate-950 font-black text-sm tracking-wide uppercase hover:brightness-105 transition shadow-neon-cyan flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full mt-2 py-3.5 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-slate-950 font-black text-sm tracking-wide uppercase hover:brightness-105 transition shadow-neon-cyan flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     {isLoading ? (
                       <>
@@ -749,51 +1129,12 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                       </>
                     ) : (
                       <>
-                        <span>Carregar Playlist e Acessar</span>
+                        <span>Vincular Lista à Minha Conta e Entrar</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
                   </button>
                 </form>
-              )}
-
-              {/* MODO 03: ARQUIVO M3U LOCAL */}
-              {activeMode === 'm3u_file' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      Nome do Perfil (Opcional)
-                    </label>
-                    <input
-                      type="text"
-                      value={m3uName}
-                      onChange={(e) => setM3uName(e.target.value)}
-                      placeholder="Ex: Minha Lista Local"
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070d14] border border-slate-800 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-cyan-400 transition"
-                    />
-                  </div>
-
-                  <label className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-cyan-500/30 hover:border-cyan-400 rounded-2xl bg-[#070d14] cursor-pointer transition group text-center">
-                    {isLoading ? (
-                      <Loader2 className="w-8 h-8 text-cyan-400 animate-spin mb-2" />
-                    ) : (
-                      <FileUp className="w-8 h-8 text-cyan-400 group-hover:scale-110 transition-transform mb-2" />
-                    )}
-                    <span className="text-sm font-bold text-white">
-                      {isLoading ? loadingText : 'Clique ou arraste um arquivo .M3U / .M3U8'}
-                    </span>
-                    <span className="text-xs text-slate-500 mt-1">
-                      Carregamento ultra-rápido otimizado para catálogos com milhares de canais
-                    </span>
-                    <input
-                      type="file"
-                      accept=".m3u,.m3u8,.txt"
-                      onChange={handleFileChange}
-                      disabled={isLoading}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
               )}
 
               {/* Opções Avançadas Recolhíveis (GPU, Latência, DSP) */}
@@ -801,7 +1142,7 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
-                  className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-cyan-300 font-semibold py-1 transition"
+                  className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-cyan-300 font-semibold py-1 transition cursor-pointer"
                 >
                   <span className="flex items-center gap-1.5">
                     <Zap className="w-3.5 h-3.5 text-cyan-400" />
@@ -820,7 +1161,7 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                             key={m}
                             type="button"
                             onClick={() => onChangeUpscaling(m)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition ${
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
                               upscaling === m
                                 ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
                                 : 'bg-[#070d14] border-slate-800 text-slate-500 hover:text-slate-300'
@@ -840,7 +1181,7 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                             key={z}
                             type="button"
                             onClick={() => onChangeZeroDelay(z)}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition ${
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                               zeroDelay === z
                                 ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
                                 : 'bg-[#070d14] border-slate-800 text-slate-500 hover:text-slate-300'
@@ -857,7 +1198,7 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                       <button
                         type="button"
                         onClick={() => onChangeSmartAudio(!smartAudio)}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold border transition ${
+                        className={`px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
                           smartAudio
                             ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
                             : 'bg-[#070d14] border-slate-800 text-slate-500'
@@ -872,7 +1213,120 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
             </div>
           </div>
         )}
+
+        {/* Rodapé de Status Hardware */}
+        <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] font-mono text-slate-400 pt-6 mt-4 max-w-lg mx-auto">
+          <div className="flex items-center gap-1.5">
+            <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+            <span>
+              Upscaling: <strong className="text-cyan-300 uppercase">{upscaling}</strong>
+            </span>
+          </div>
+          <span className="text-slate-700">•</span>
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+            <span>
+              Buffer: <strong className="text-cyan-300 uppercase">{zeroDelay}</strong>
+            </span>
+          </div>
+          <span className="text-slate-700">•</span>
+          <div className="flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>
+              Smart DSP:{' '}
+              <strong className="text-cyan-300">{smartAudio ? 'ATIVO' : 'DESLIGADO'}</strong>
+            </span>
+          </div>
+        </div>
       </main>
+
+      {/* MODAL DE LOGIN COM CONTA GOOGLE */}
+      {isGoogleModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#111622] border border-white/15 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path
+                      fill="#EA4335"
+                      d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Fazer login com o Google</h3>
+                  <p className="text-xs text-slate-400">Prosseguir para {appConfig.appName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsGoogleModalOpen(false)}
+                className="text-xs text-slate-400 hover:text-white cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <form onSubmit={handleGoogleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Seu E-mail do Google (Gmail) *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={googleEmail}
+                  onChange={(e) => setGoogleEmail(e.target.value)}
+                  placeholder="seu.nome@gmail.com"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/15 text-sm text-white focus:outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Seu Nome (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={googleName}
+                  onChange={(e) => setGoogleName(e.target.value)}
+                  placeholder="Ex: Guilherme"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/15 text-sm text-white focus:outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsGoogleModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white shadow-lg shadow-blue-600/25 cursor-pointer"
+                >
+                  Continuar com Google
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

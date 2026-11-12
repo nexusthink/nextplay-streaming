@@ -29,3 +29,5 @@ Thumbs.db
 # Coverage & test artifacts
 coverage/
 .vitest/
+server/data/
+NextPlay-Universal-Mobile-TV.apk

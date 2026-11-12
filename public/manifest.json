@@ -1,0 +1,11 @@
+{
+  "name": "NextPlay IPTV — Celular, Tablet & Android TV",
+  "short_name": "NextPlay",
+  "description": "Player IPTV 4K para Celular, Tablet e Android TV com vínculo automático de conta",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#06090e",
+  "theme_color": "#00f2fe"
+}
+

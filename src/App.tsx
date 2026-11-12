@@ -29,6 +29,8 @@ import {
   Sparkles,
   ShieldCheck,
   SlidersHorizontal,
+  Shield,
+  Link2,
 } from 'lucide-react';
 import {
   ChannelItem,
@@ -39,6 +41,9 @@ import {
   MediaType,
   SeriesDetails,
   SeriesEpisode,
+  UserAccount,
+  PublicServerOption,
+  PublicAppConfig,
 } from './types/iptv';
 import { DEMO_CHANNELS } from './services/demoPlaylist';
 import { parseM3UContent } from './services/m3uParser';
@@ -48,6 +53,17 @@ import {
   fetchXtreamSeriesInfo,
 } from './services/xtreamService';
 import {
+  fetchCurrentSession,
+  fetchPublicConfig,
+  getUserToken,
+  linkIptvToAccount,
+  loginAccount,
+  loginWithGoogle,
+  registerAccount,
+  setUserToken,
+  unlinkIptvFromAccount,
+} from './services/authService';
+import {
   findAlternateAudioVariant,
   isLegendadoItem,
 } from './services/subtitleEngine';
@@ -56,6 +72,7 @@ import { VirtualChannelCatalog } from './components/VirtualChannelCatalog';
 import { SeriesEpisodeSelector } from './components/SeriesEpisodeSelector';
 import { ConnectionModal } from './components/ConnectionModal';
 import { AuthPortalScreen, UpscalingMode, ZeroDelayMode } from './components/AuthPortalScreen';
+import { AdminPanelScreen } from './components/AdminPanelScreen';
 import { NextPlayIntroAnimation } from './components/NextPlayIntroAnimation';
 import { HistoryManagerPanel } from './components/HistoryManagerPanel';
 import { HistoryClearScope, clearHistoryByScope, updateWatchProgress } from './services/historyManager';
@@ -90,11 +107,38 @@ const STORAGE_KEYS = {
 };
 
 export const App: React.FC = () => {
+  // Detecta se está na rota do Painel Administrativo (/admin)
+  const [isAdminView, setIsAdminView] = useState<boolean>(() => {
+    return (
+      window.location.pathname.startsWith('/admin') ||
+      window.location.hash === '#admin' ||
+      new URLSearchParams(window.location.search).get('admin') === '1'
+    );
+  });
+
   // Controla a exibição da Abertura Cinematográfica estilo Saimo TV / NextPlay
-  const [showIntro, setShowIntro] = useState<boolean>(true);
+  const [showIntro, setShowIntro] = useState<boolean>(() => {
+    return !(
+      window.location.pathname.startsWith('/admin') ||
+      window.location.hash === '#admin' ||
+      new URLSearchParams(window.location.search).get('admin') === '1'
+    );
+  });
 
   // Controla se o usuário está no Painel de Login/Entrada ou dentro do Player Principal
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  // Estado da Conta do Cliente (E-mail ou Google) e Lista de Servidores do Admin
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [publicServers, setPublicServers] = useState<PublicServerOption[]>([]);
+  const [appConfig, setAppConfig] = useState<PublicAppConfig>({
+    appName: 'NextPlay',
+    supportWhatsapp: '',
+    googleClientId: '',
+    allowDemoMode: true,
+  });
+  const [isAutoConnecting, setIsAutoConnecting] = useState<boolean>(false);
+  const [autoConnectError, setAutoConnectError] = useState<string | null>(null);
 
   // Ajustes de Imagem e Transmissão (Super Resolução Upscaling, Zero Delay e Áudio Inteligente)
   const [upscaling, setUpscaling] = useState<UpscalingMode>(() => {
@@ -460,6 +504,65 @@ export const App: React.FC = () => {
         e.preventDefault();
         setIsOmniSearchOpen(true);
         return;
+      }
+
+      // Navegação Espacial D-Pad (Setas do Controle Remoto Android TV / TV Box / Fire Stick)
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        const focusable = Array.from(
+          document.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => {
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+        });
+
+        if (focusable.length > 0) {
+          const current = document.activeElement as HTMLElement | null;
+          if (!current || !focusable.includes(current)) {
+            e.preventDefault();
+            focusable[0].focus();
+            return;
+          }
+
+          const curRect = current.getBoundingClientRect();
+          const curCenter = {
+            x: curRect.left + curRect.width / 2,
+            y: curRect.top + curRect.height / 2,
+          };
+
+          let bestCandidate: HTMLElement | null = null;
+          let bestScore = Infinity;
+
+          for (const cand of focusable) {
+            if (cand === current) continue;
+            const r = cand.getBoundingClientRect();
+            const c = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+            const dx = c.x - curCenter.x;
+            const dy = c.y - curCenter.y;
+
+            if (e.key === 'ArrowRight' && dx <= 6) continue;
+            if (e.key === 'ArrowLeft' && dx >= -6) continue;
+            if (e.key === 'ArrowDown' && dy <= 6) continue;
+            if (e.key === 'ArrowUp' && dy >= -6) continue;
+
+            const primaryDist = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? Math.abs(dx) : Math.abs(dy);
+            const crossDist = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? Math.abs(dy) : Math.abs(dx);
+            const score = primaryDist + crossDist * 2.6;
+
+            if (score < bestScore) {
+              bestScore = score;
+              bestCandidate = cand;
+            }
+          }
+
+          if (bestCandidate) {
+            e.preventDefault();
+            bestCandidate.focus();
+            bestCandidate.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+            return;
+          }
+        }
       }
 
       // Atalho: Teclas Numéricas 0-9 para Zapping Rápido no Controle Remoto
@@ -856,6 +959,196 @@ export const App: React.FC = () => {
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId);
 
+  // ==========================================================================
+  // CONEXÃO AUTOMÁTICA DA LISTA VINCULADA À CONTA DO USUÁRIO
+  // ==========================================================================
+  const connectUserLinkedIptv = useCallback(async (user: UserAccount) => {
+    if (!user.iptvLink) return;
+    setIsAutoConnecting(true);
+    setAutoConnectError(null);
+    try {
+      const { channels: xtChannels } = await connectXtreamCodes(
+        user.iptvLink.serverId,
+        user.iptvLink.username,
+        user.iptvLink.password,
+        user.iptvLink.format || 'm3u8'
+      );
+      if (xtChannels.length === 0) {
+        throw new Error('Autenticado, mas nenhum canal foi retornado pelo servidor.');
+      }
+      setChannels(xtChannels);
+      setSelectedCategory('ALL');
+      setSelectedNav('all');
+      setUseProxyBuffer(true);
+      setActiveChannel(null);
+      setIsAuthenticated(true);
+    } catch (err) {
+      setAutoConnectError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível carregar sua lista IPTV vinculada. Verifique seus dados ou escolha outro servidor.'
+      );
+      setIsAuthenticated(false);
+    } finally {
+      setIsAutoConnecting(false);
+    }
+  }, []);
+
+  // Carrega configurações públicas (Servidores do Admin) e restaura sessão ativa do usuário
+  const loadPublicConfigAndSession = useCallback(async () => {
+    try {
+      const pub = await fetchPublicConfig();
+      setPublicServers(pub.servers || []);
+      setAppConfig(pub.settings);
+      if (pub.settings.supportWhatsapp) {
+        setSupportWhatsapp(pub.settings.supportWhatsapp);
+      }
+    } catch {
+      // ignore offline
+    }
+
+    if (getUserToken()) {
+      try {
+        const session = await fetchCurrentSession();
+        setCurrentUser(session.user);
+        if (session.servers) setPublicServers(session.servers);
+        if (session.user.iptvLink) {
+          await connectUserLinkedIptv(session.user);
+        }
+      } catch {
+        setCurrentUser(null);
+      }
+    }
+  }, [connectUserLinkedIptv]);
+
+  useEffect(() => {
+    loadPublicConfigAndSession();
+  }, [loadPublicConfigAndSession]);
+
+  // Sincroniza botão voltar/avançar do navegador com /admin
+  useEffect(() => {
+    const onPopState = () => {
+      setIsAdminView(
+        window.location.pathname.startsWith('/admin') ||
+          window.location.hash === '#admin'
+      );
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const handleOpenAdminPanel = useCallback(() => {
+    try {
+      window.history.pushState({}, '', '/admin');
+    } catch {
+      // ignore
+    }
+    setIsAdminView(true);
+  }, []);
+
+  const handleCloseAdminPanel = useCallback(() => {
+    try {
+      window.history.pushState({}, '', '/');
+    } catch {
+      // ignore
+    }
+    setIsAdminView(false);
+    loadPublicConfigAndSession();
+  }, [loadPublicConfigAndSession]);
+
+  // Handlers de Autenticação da Conta do Cliente (E-mail e Google)
+  const handleLoginEmail = async (email: string, password: string) => {
+    const { user } = await loginAccount(email, password);
+    setCurrentUser(user);
+    setAutoConnectError(null);
+    if (user.iptvLink) {
+      await connectUserLinkedIptv(user);
+    }
+  };
+
+  const handleRegisterEmail = async (name: string, email: string, password: string) => {
+    const { user } = await registerAccount(name, email, password);
+    setCurrentUser(user);
+    setAutoConnectError(null);
+    if (user.iptvLink) {
+      await connectUserLinkedIptv(user);
+    }
+  };
+
+  const handleLoginGoogle = async (payload: {
+    email?: string;
+    name?: string;
+    credential?: string;
+  }) => {
+    const { user } = await loginWithGoogle(payload);
+    setCurrentUser(user);
+    setAutoConnectError(null);
+    if (user.iptvLink) {
+      await connectUserLinkedIptv(user);
+    }
+  };
+
+  // Handler que valida o Usuário/Senha IPTV no Servidor escolhido e salva o vínculo na conta do cliente
+  const handleLinkIptvAndConnect = async (
+    serverId: string,
+    iptvUsername: string,
+    iptvPassword: string
+  ) => {
+    const srv = publicServers.find((s) => s.id === serverId);
+    const format = srv?.format || 'm3u8';
+
+    const { accountInfo, channels: xtChannels } = await connectXtreamCodes(
+      serverId,
+      iptvUsername,
+      iptvPassword,
+      format
+    );
+
+    if (xtChannels.length === 0) {
+      throw new Error('Autenticado, mas nenhum canal/mídia foi retornado por este servidor.');
+    }
+
+    const updatedUser = await linkIptvToAccount(
+      serverId,
+      iptvUsername,
+      iptvPassword,
+      accountInfo
+    );
+
+    setCurrentUser(updatedUser);
+    setAutoConnectError(null);
+    setChannels(xtChannels);
+    setSelectedCategory('ALL');
+    setSelectedNav('all');
+    setUseProxyBuffer(true);
+    setActiveChannel(null);
+    setIsAuthenticated(true);
+  };
+
+  const handleUnlinkIptv = async () => {
+    const updatedUser = await unlinkIptvFromAccount();
+    setCurrentUser(updatedUser);
+    setIsAuthenticated(false);
+    setActiveChannel(null);
+  };
+
+  const handleLogoutAccount = () => {
+    setUserToken(null);
+    setCurrentUser(null);
+    setAutoConnectError(null);
+    setIsAuthenticated(false);
+    setActiveChannel(null);
+  };
+
+  if (isAdminView) {
+    return (
+      <AdminPanelScreen
+        onBackToApp={handleCloseAdminPanel}
+        onConfigChanged={loadPublicConfigAndSession}
+      />
+    );
+  }
+
   return (
     <>
       {/* Filtros SVG de Super Resolução (Upscaling HD → Full HD e Full HD → 4K idênticos ao Saimo TV) */}
@@ -886,10 +1179,14 @@ export const App: React.FC = () => {
       {/* Abertura Cinematográfica Estilo Saimo TV / NextPlay */}
       {showIntro && <NextPlayIntroAnimation onFinish={() => setShowIntro(false)} />}
 
-      {/* Painel de Entrada: Login e Senha / Listas M3U antes de entrar no Player */}
+      {/* Painel de Entrada: Conta do Usuário (E-mail/Google) + Vínculo de Servidor IPTV */}
       {!isAuthenticated ? (
         <AuthPortalScreen
-          profiles={profiles}
+          currentUser={currentUser}
+          servers={publicServers}
+          appConfig={appConfig}
+          autoConnectError={autoConnectError}
+          isAutoConnecting={isAutoConnecting}
           upscaling={upscaling}
           onChangeUpscaling={setUpscaling}
           zeroDelay={zeroDelay}
@@ -897,11 +1194,15 @@ export const App: React.FC = () => {
           smartAudio={smartAudio}
           onChangeSmartAudio={setSmartAudio}
           onReplayIntro={() => setShowIntro(true)}
-          onConnectXtream={handleConnectXtream}
-          onConnectM3uUrl={handleConnectM3uUrl}
-          onConnectM3uFile={handleConnectM3uFile}
-          onSelectSavedProfile={(prof) => handleSelectProfile(prof.id)}
-          onDeleteProfile={handleDeleteProfile}
+          onLoginEmail={handleLoginEmail}
+          onRegisterEmail={handleRegisterEmail}
+          onLoginGoogle={handleLoginGoogle}
+          onLinkIptvAndConnect={handleLinkIptvAndConnect}
+          onRetryAutoConnect={
+            currentUser?.iptvLink ? () => connectUserLinkedIptv(currentUser) : undefined
+          }
+          onLogoutAccount={handleLogoutAccount}
+          onOpenAdminPanel={handleOpenAdminPanel}
           onEnterDemoMode={() => {
             setActiveProfileId('demo-default');
             setChannels(DEMO_CHANNELS);
@@ -1068,18 +1369,22 @@ export const App: React.FC = () => {
                 <Settings className="w-4 h-4" />
               </button>
 
-              {/* Dropdown de Perfil Estilo Netflix */}
+              {/* Dropdown da Conta do Usuário & Lista Vinculada */}
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                  className="flex items-center gap-2 p-1 pl-1.5 pr-2 rounded-full hover:bg-white/10 transition border border-transparent hover:border-slate-700"
+                  className="flex items-center gap-2 p-1 pl-1.5 pr-2 rounded-full hover:bg-white/10 transition border border-transparent hover:border-slate-700 cursor-pointer"
                 >
                   <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-xs font-black text-white shadow-md">
-                    {activeProfile?.name ? activeProfile.name.trim().charAt(0).toUpperCase() : 'U'}
+                    {currentUser?.name
+                      ? currentUser.name.trim().charAt(0).toUpperCase()
+                      : activeProfile?.name
+                      ? activeProfile.name.trim().charAt(0).toUpperCase()
+                      : 'U'}
                   </div>
-                  <span className="hidden sm:inline text-xs font-semibold text-slate-200 max-w-[100px] truncate">
-                    {activeProfile?.name || 'Showcase'}
+                  <span className="hidden sm:inline text-xs font-semibold text-slate-200 max-w-[110px] truncate">
+                    {currentUser?.name || activeProfile?.name || 'Visitante'}
                   </span>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                 </button>
@@ -1087,38 +1392,40 @@ export const App: React.FC = () => {
                 {/* Menu Dropdown Flutuante */}
                 {isProfileMenuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-60 rounded-2xl bg-[#0a1017]/95 backdrop-blur-2xl border border-slate-800 shadow-2xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2"
+                    className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#0a1017]/95 backdrop-blur-2xl border border-slate-800 shadow-2xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2"
                     onMouseLeave={() => setIsProfileMenuOpen(false)}
                   >
                     <div className="px-3 py-2.5 border-b border-slate-800 mb-1">
-                      <p className="text-[10px] uppercase font-bold text-slate-500">Perfil Ativo</p>
-                      <p className="font-bold text-white truncate mt-0.5">{activeProfile?.name || 'NextPlay User'}</p>
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded text-[9px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                      <p className="text-[10px] uppercase font-bold text-slate-500">
+                        {currentUser ? 'Conta Conectada' : 'Modo Demonstração'}
+                      </p>
+                      <p className="font-bold text-white truncate mt-0.5">
+                        {currentUser?.name || activeProfile?.name || 'NextPlay User'}
+                      </p>
+                      {currentUser?.email && (
+                        <p className="text-[11px] text-slate-400 truncate">{currentUser.email}</p>
+                      )}
+                      {currentUser?.iptvLink && (
+                        <p className="text-[11px] text-emerald-400 font-semibold truncate mt-1">
+                          Servidor: {currentUser.iptvLink.serverName}
+                        </p>
+                      )}
+                      <span className="inline-block mt-1.5 px-2 py-0.5 rounded text-[9px] font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
                         {channels.length.toLocaleString('pt-BR')} itens disponíveis
                       </span>
                     </div>
 
-                    <a
-                      href={`https://wa.me/${supportWhatsapp.replace(/\D/g, '')}?text=Olá,%20preciso%20de%20suporte%20no%20NextPlay`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full text-left px-3 py-2 rounded-xl text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 flex items-center gap-2 transition"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      <span>Suporte WhatsApp</span>
-                    </a>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        setIsAuthenticated(false);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition"
-                    >
-                      <User className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Trocar de Perfil</span>
-                    </button>
+                    {supportWhatsapp && (
+                      <a
+                        href={`https://wa.me/${supportWhatsapp.replace(/\D/g, '')}?text=Olá,%20preciso%20de%20suporte%20no%20NextPlay`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full text-left px-3 py-2 rounded-xl text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 flex items-center gap-2 transition"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>Suporte WhatsApp</span>
+                      </a>
+                    )}
 
                     <button
                       type="button"
@@ -1126,10 +1433,22 @@ export const App: React.FC = () => {
                         setIsProfileMenuOpen(false);
                         setIsModalOpen(true);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition"
+                      className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition cursor-pointer"
                     >
-                      <PlusCircle className="w-3.5 h-3.5 text-teal-400" />
-                      <span>Conectar Nova Conta / Lista</span>
+                      <Link2 className="w-3.5 h-3.5 text-teal-400" />
+                      <span>Alterar Servidor / Login IPTV</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        handleOpenAdminPanel();
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition cursor-pointer"
+                    >
+                      <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Painel Admin (/admin)</span>
                     </button>
 
                     <button
@@ -1138,7 +1457,7 @@ export const App: React.FC = () => {
                         setIsProfileMenuOpen(false);
                         setIsSettingsModalOpen(true);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition"
+                      className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition cursor-pointer"
                     >
                       <SlidersHorizontal className="w-3.5 h-3.5 text-purple-400" />
                       <span>Configurações & Telemetria</span>
@@ -1150,12 +1469,12 @@ export const App: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setIsProfileMenuOpen(false);
-                        setIsAuthenticated(false);
+                        handleLogoutAccount();
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 transition"
+                      className="w-full text-left px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 transition cursor-pointer"
                     >
                       <LogOut className="w-3.5 h-3.5" />
-                      <span>Sair da Sessão</span>
+                      <span>Sair da Conta</span>
                     </button>
                   </div>
                 )}
@@ -1525,17 +1844,14 @@ export const App: React.FC = () => {
             </button>
           </nav>
 
-          {/* Modal de Conexão: Login e Senha (Xtream Codes) + Lista M3U/M3U8 */}
+          {/* Modal de Vínculo de Servidor e Login IPTV da Conta */}
           <ConnectionModal
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
-            profiles={profiles}
-            activeProfileId={activeProfileId}
-            onSelectProfile={handleSelectProfile}
-            onDeleteProfile={handleDeleteProfile}
-            onConnectXtream={handleConnectXtream}
-            onConnectM3uUrl={handleConnectM3uUrl}
-            onConnectM3uFile={handleConnectM3uFile}
+            currentUser={currentUser}
+            servers={publicServers}
+            onLinkIptvAndConnect={handleLinkIptvAndConnect}
+            onUnlinkIptv={handleUnlinkIptv}
             onLoadDemo={() => {
               setActiveProfileId('demo-default');
               setChannels(DEMO_CHANNELS);

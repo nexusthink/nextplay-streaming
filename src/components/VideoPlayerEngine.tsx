@@ -727,8 +727,22 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
   const resolveStreamUrl = useCallback(
     (rawUrl: string, forceProxy: boolean, audioTrackIdx = 0): string => {
       if (!rawUrl) return '';
+      const isCapacitorNative =
+        typeof window !== 'undefined' &&
+        (Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+          (window.location.hostname === 'localhost' && !window.location.port));
+
+      // No app nativo Android (Celular, Tablet, Android TV), a WebView possui cleartext liberado
+      // e reproduz direto da CDN IPTV (funcionando inclusive no 4G/5G ou fora de casa sem depender do PC)
+      if (isCapacitorNative && audioTrackIdx === 0) {
+        return rawUrl;
+      }
+
       if (forceProxy || audioTrackIdx > 0) {
-        return `/api/stream?url=${encodeURIComponent(rawUrl)}&audioTrack=${audioTrackIdx}`;
+        const apiBase = isCapacitorNative
+          ? (localStorage.getItem('nextplay_api_server_url_v1') || 'http://192.168.80.110:4150').replace(/\/+$/, '')
+          : '';
+        return `${apiBase}/api/stream?url=${encodeURIComponent(rawUrl)}&audioTrack=${audioTrackIdx}`;
       }
       return rawUrl;
     },

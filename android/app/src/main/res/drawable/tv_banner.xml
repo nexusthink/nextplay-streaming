@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Background Dark Cyberpunk -->
+    <path
+        android:fillColor="#060A10"
+        android:pathData="M0,0h320v180h-320z" />
+
+    <!-- Subtle Cyan Top Accent Bar -->
+    <path
+        android:fillColor="#00F2FE"
+        android:pathData="M0,0h320v4h-320z" />
+
+    <!-- Emblem Box -->
+    <path
+        android:fillColor="#0E1722"
+        android:strokeColor="#00F2FE"
+        android:strokeWidth="2"
+        android:pathData="M46,54 L106,54 A14,14 0 0,1 120,68 L120,112 A14,14 0 0,1 106,126 L46,126 A14,14 0 0,1 32,112 L32,68 A14,14 0 0,1 46,54 Z" />
+
+    <!-- Back Prism Triangle -->
+    <path
+        android:fillColor="#0891B2"
+        android:pathData="M54,68 L86,90 L54,112 Z" />
+
+    <!-- Front Bright Cyan Prism Triangle -->
+    <path
+        android:fillColor="#00F2FE"
+        android:pathData="M68,66 L104,90 L68,114 Z" />
+
+    <!-- Decorative Play Bars / Signal on Right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M142,70h116v14h-116z" />
+    <path
+        android:fillColor="#00F2FE"
+        android:pathData="M142,94h84v10h-84z" />
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M234,94h38v10h-38z" />
+</vector>
+

@@ -6,6 +6,7 @@ import {
   XtreamAccountInfo,
 } from '../types/iptv';
 import { generateSmartEpg } from './m3uParser';
+import { getApiServerBaseUrl, resolveServerDnsLocally } from './authService';
 
 export interface XtreamAuthResult {
   accountInfo: XtreamAccountInfo;
@@ -99,18 +100,23 @@ export function buildXtreamStreamUrl(
  * e cura subdomínios encurtadores inativos como e.dominio.xyz -> dominio.xyz)
  */
 async function callXtreamApi(
-  serverUrl: string,
+  serverUrlOrId: string,
   username: string,
   password: string,
   action?: string,
   extraParams?: Record<string, string | number>
 ): Promise<any> {
-  const base = normalizeServerUrl(serverUrl);
+  const isServerId = /^srv-/i.test(serverUrlOrId.trim());
+  const base = isServerId ? serverUrlOrId.trim() : normalizeServerUrl(serverUrlOrId);
   const proxyParams = new URLSearchParams({
-    server: base,
     username: username.trim(),
     password: password.trim(),
   });
+  if (isServerId) {
+    proxyParams.set('serverId', base);
+  } else {
+    proxyParams.set('server', base);
+  }
   if (action) proxyParams.set('action', action);
   if (extraParams) {
     for (const [k, v] of Object.entries(extraParams)) {
@@ -119,21 +125,34 @@ async function callXtreamApi(
   }
 
   let proxyErrorMsg = '';
-  try {
-    const proxyRes = await fetch(`/api/xtream?${proxyParams.toString()}`);
-    if (proxyRes.ok) {
-      return await proxyRes.json();
+  for (const prefix of ['', getApiServerBaseUrl(), 'http://127.0.0.1:4150']) {
+    try {
+      const proxyRes = await fetch(`${prefix}/api/xtream?${proxyParams.toString()}`);
+      const contentType = proxyRes.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) continue;
+      if (proxyRes.ok) {
+        return await proxyRes.json();
+      }
+      const errJson = await proxyRes.json().catch(() => null);
+      if (errJson?.error) {
+        proxyErrorMsg = errJson.details ? `${errJson.error} (${errJson.details})` : errJson.error;
+        break;
+      }
+    } catch {
+      // Tenta próximo prefixo ou fallback direto
     }
-    const errJson = await proxyRes.json().catch(() => null);
-    if (errJson?.error) {
-      proxyErrorMsg = errJson.details ? `${errJson.error} (${errJson.details})` : errJson.error;
-    }
-  } catch {
-    // Fallback para chamada direta (ex: Android Nativo sem servidor local)
+  }
+
+  const directBase = isServerId
+    ? normalizeServerUrl(resolveServerDnsLocally(base) || '')
+    : base;
+
+  if (!directBase || directBase === 'http://') {
+    throw new Error(proxyErrorMsg || 'Falha de conexão com o servidor IPTV selecionado.');
   }
 
   try {
-    const directUrl = new URL(`${base}/player_api.php`);
+    const directUrl = new URL(`${directBase}/player_api.php`);
     directUrl.searchParams.set('username', username.trim());
     directUrl.searchParams.set('password', password.trim());
     if (action) directUrl.searchParams.set('action', action);
@@ -269,7 +288,8 @@ export async function connectXtreamCodes(
   password: string,
   preferredLiveFormat: 'm3u8' | 'ts' = 'm3u8'
 ): Promise<XtreamAuthResult> {
-  const initialBase = normalizeServerUrl(serverUrl);
+  const isServerId = /^srv-/i.test(serverUrl.trim());
+  const initialBase = isServerId ? serverUrl.trim() : normalizeServerUrl(serverUrl);
 
   // 1. Valida credenciais e obtém dados da conta e o domínio canônico real do servidor
   const authData = await callXtreamApi(initialBase, username, password);
@@ -277,8 +297,10 @@ export async function connectXtreamCodes(
     throw new Error('Usuário ou senha inválidos no servidor IPTV.');
   }
 
-  // Se o usuário digitou um subdomínio encurtador (ex: e.cinemaxhub.xyz), usa a URL real retornada por server_info
-  let canonicalBase = initialBase;
+  // Se o usuário selecionou um servidor pelo ID (srv-1) ou digitou um subdomínio encurtador, usa a URL real retornada
+  let canonicalBase = authData._resolvedServerUrl
+    ? normalizeServerUrl(String(authData._resolvedServerUrl))
+    : initialBase;
   if (authData.server_info?.url) {
     const proto = authData.server_info.server_protocol || 'http';
     const host = String(authData.server_info.url).trim();

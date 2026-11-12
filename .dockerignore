@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-electron
+release
+android
+server/data
+.git
+.env
+*.log
+NextPlay-Universal-Mobile-TV.apk
+

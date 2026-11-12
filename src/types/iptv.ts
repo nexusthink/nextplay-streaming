@@ -13,8 +13,54 @@ export interface EpgProgram {
 
 export interface XtreamInlineAuth {
   serverUrl: string;
+  serverId?: string;
   username: string;
   password: string;
+}
+
+export interface PublicServerOption {
+  id: string;
+  name: string;
+  region: string;
+  format: 'm3u8' | 'ts';
+  isDefault?: boolean;
+}
+
+export interface AdminServerItem extends PublicServerOption {
+  dnsUrl: string;
+  active: boolean;
+  createdAt: number;
+  linkedUsersCount?: number;
+}
+
+export interface UserIptvLink {
+  serverId: string;
+  serverName: string;
+  serverDns?: string;
+  format: 'm3u8' | 'ts';
+  username: string;
+  password: string;
+  linkedAt: number;
+  accountInfo?: XtreamAccountInfo | null;
+}
+
+export interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+  provider: 'email' | 'google';
+  avatarUrl?: string | null;
+  status: 'active' | 'blocked';
+  createdAt: number;
+  lastLoginAt?: number | null;
+  iptvLink?: UserIptvLink | null;
+}
+
+export interface PublicAppConfig {
+  appName: string;
+  supportWhatsapp: string;
+  googleClientId: string;
+  allowDemoMode: boolean;
 }
 
 export interface SeriesEpisode {

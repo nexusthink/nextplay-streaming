@@ -1,0 +1,38 @@
+# ==============================================================================
+# NEXTPLAY STREAMING - DOCKER COMPOSE PARA HOSPEDAGEM EM VPS
+# Container Isolado: nextplay-web (Não conflita com gorango-web nem outros apps)
+# ==============================================================================
+
+services:
+  nextplay-web:
+    container_name: nextplay-web
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_NAME: ${VITE_APP_NAME:-NextPlay}
+        VITE_API_URL: ${VITE_API_URL:-}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8090}:80"
+    volumes:
+      - nextplay-data:/usr/src/nextplay-server/data
+    environment:
+      - NODE_ENV=production
+      - PORT=4150
+      - NEXTPLAY_TOKEN_SECRET=${NEXTPLAY_TOKEN_SECRET:-nextplay-vps-secret-key-2026}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - nextplay-net
+
+volumes:
+  nextplay-data:
+
+networks:
+  nextplay-net:
+    driver: bridge
+

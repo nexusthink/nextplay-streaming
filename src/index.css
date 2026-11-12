@@ -49,3 +49,25 @@ video::-webkit-media-text-track-region {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(79, 243, 224, 0.55);
 }
+
+/* Destaque de Foco D-Pad para Controle Remoto de Android TV / TV Box / Fire Stick */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #00f2fe !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(0, 242, 254, 0.35), 0 8px 24px rgba(0, 242, 254, 0.25) !important;
+  transition: outline 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+/* Otimizações Touch para Celular e Tablet */
+@media (pointer: coarse) {
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
