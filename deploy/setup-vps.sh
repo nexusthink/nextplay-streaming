@@ -45,6 +45,11 @@ sleep 3
 PORT=$(grep -E '^APP_PORT=' .env | cut -d '=' -f2 || echo "8090")
 PORT=${PORT:-8090}
 
+# Libera a porta no UFW caso o firewall da VPS esteja ativo
+if command -v ufw &> /dev/null; then
+    sudo ufw allow "${PORT}/tcp" >/dev/null 2>&1 || true
+fi
+
 if curl -fsS "http://127.0.0.1:${PORT}/healthz" > /dev/null 2>&1; then
     echo -e "${GREEN}======================================================================${NC}"
     echo -e "${GREEN}🚀 DEPLOY DO NEXTPLAY CONCLUÍDO COM SUCESSO!${NC}"
