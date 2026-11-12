@@ -1,0 +1,50 @@
+{
+  "name": "nextplay-iptv",
+  "version": "1.0.0",
+  "description": "NextPlay — Desktop, Web & Android Native Media & IPTV Streaming Engine",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev:web": "vite --port 5173",
+    "dev:server": "node server/index.js",
+    "dev": "concurrently -k -n \"SERVER,WEB\" -c \"cyan,magenta\" \"npm run dev:server\" \"npm run dev:web\"",
+    "desktop": "concurrently -k -n \"SERVER,WEB,ELECTRON\" -c \"cyan,magenta,green\" \"npm run dev:server\" \"npm run dev:web\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "tsc && vite build",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:run": "npx cap run android",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "hls.js": "^1.5.17",
+    "lucide-react": "^0.460.0",
+    "mpegts.js": "^1.7.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.4"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.5",
+    "wait-on": "^8.0.1"
+  }
+}
+
