@@ -1119,35 +1119,54 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">
-                  Google OAuth Client ID — Único do Tipo &quot;Aplicativo da Web&quot; (Opcional)
-                </label>
-                {googleClientId && (
-                  <button
-                    type="button"
-                    onClick={() => setGoogleClientId('')}
-                    className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 cursor-pointer"
-                  >
-                    Limpar (Ativar Seletor Universal Multi-Dispositivo)
-                  </button>
-                )}
-              </div>
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Google OAuth Client ID — Único para Web, Celular e Android TV
+              </label>
               <input
                 type="text"
                 value={googleClientId}
                 onChange={(e) => setGoogleClientId(e.target.value)}
-                placeholder="Deixe em branco para funcionar em IP, Web, Celular e TV sem restrição de Client ID"
+                placeholder="Ex: 123456789-abcdef.apps.googleusercontent.com"
                 className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-red-500 font-mono"
               />
-              <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
-                <strong className="text-emerald-400">Dica Multi-Dispositivo (Web + Celular + Android TV + IP):</strong>{' '}
-                Você <strong>não precisa</strong> criar IDs separados para Android ou TV. Deixe este campo{' '}
-                <strong>em branco</strong> (ou coloque apenas 1 ID do tipo <em>Aplicativo da Web</em>): o NextPlay
-                detecta automaticamente quando o acesso vem de Celular, TV Box ou IP da VPS e abre o{' '}
-                <strong>Seletor Universal de Conta Google</strong> sem bloqueio de origem ou SHA-1.
-              </p>
+
+              <div className="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-xs text-gray-300 space-y-2">
+                <p className="font-bold text-cyan-300">
+                  Como usar 1 ÚNICO Client ID no Google Cloud para Web + Celular + TV:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-[11px] text-gray-300">
+                  <li>
+                    No Google Cloud Console (<strong>Credenciais &rarr; Criar ID do cliente OAuth</strong>),
+                    escolha <strong>APENAS</strong> o tipo <strong>&quot;Aplicativo da Web&quot;</strong> (não crie tipo Android nem TV, pois nosso APK Android/TV usa motor Web unificado).
+                  </li>
+                  <li>
+                    Dentro desse único Client ID Web, adicione em{' '}
+                    <strong>Origens JavaScript autorizadas</strong> e em{' '}
+                    <strong>URIs de redirecionamento autorizados</strong> estas URLs:
+                  </li>
+                </ol>
+                <div className="grid grid-cols-1 gap-1.5 pt-1 font-mono text-[11px]">
+                  <div className="px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-emerald-300 flex items-center justify-between">
+                    <span>http://localhost</span>
+                    <span className="text-[10px] text-gray-400 font-sans">
+                      (Faz funcionar no APK Celular, Tablet e Android TV)
+                    </span>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-emerald-300 flex items-center justify-between">
+                    <span>
+                      {/^(\d{1,3}\.){3}\d{1,3}$/.test(window.location.hostname)
+                        ? `${window.location.protocol}//${window.location.hostname}.sslip.io${
+                            window.location.port ? `:${window.location.port}` : ''
+                          }`
+                        : window.location.origin}
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-sans">
+                      (Faz funcionar na sua VPS / Navegador Web)
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center justify-between p-4 rounded-xl bg-black/40 border border-white/10">

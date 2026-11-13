@@ -65,7 +65,9 @@ interface AuthPortalScreenProps {
   onLoginGoogle: (payload: {
     email?: string;
     name?: string;
+    avatarUrl?: string;
     credential?: string;
+    accessToken?: string;
   }) => Promise<void>;
   onLinkIptvAndConnect: (
     serverId: string,
@@ -239,11 +241,96 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     document.head.appendChild(script);
   }, [appConfig.googleClientId]);
 
-  // Escuta o retorno da Janela Popup do Google (postMessage)
+  // Processa retorno oficial OAuth 2.0 do Google (#access_token=...) no Web, APK Android e Android TV
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || !hash.includes('access_token=')) return;
+
+    const params = new URLSearchParams(hash.replace(/^#/, ''));
+    const accessToken = params.get('access_token');
+    if (!accessToken) return;
+
+    // Se este carregamento estiver dentro de uma janela popup, avisa a janela principal e fecha
+    if (window.opener && window.opener !== window) {
+      window.opener.postMessage(
+        {
+          type: 'NEXTPLAY_GOOGLE_OAUTH_TOKEN',
+          accessToken,
+        },
+        '*'
+      );
+      window.close();
+      return;
+    }
+
+    // Limpa o hash da barra de endereço
+    try {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch {
+      // ignore
+    }
+
+    // Valida o access_token diretamente nos servidores do Google
+    (async () => {
+      setIsLoading(true);
+      setLoadingText('Validando sua conta oficial nos servidores do Google...');
+      setError(null);
+      try {
+        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!userInfoRes.ok) {
+          throw new Error('Token do Google expirado ou inválido.');
+        }
+        const profile = await userInfoRes.json();
+        await onLoginGoogle({
+          email: profile.email,
+          name: profile.name || profile.given_name || profile.email?.split('@')[0],
+          avatarUrl: profile.picture,
+          accessToken,
+        });
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Falha ao validar sua conta Google oficial.'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [onLoginGoogle]);
+
+  // Escuta o retorno da Janela Popup do Google (postMessage com Token OAuth real)
   useEffect(() => {
     const handlePopupMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'NEXTPLAY_GOOGLE_OAUTH_TOKEN' && event.data?.accessToken) {
+        const accessToken = String(event.data.accessToken);
+        setIsLoading(true);
+        setLoadingText('Validando sua conta oficial no Google...');
+        setError(null);
+        try {
+          const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (!userInfoRes.ok) {
+            throw new Error('Token do Google inválido.');
+          }
+          const profile = await userInfoRes.json();
+          await onLoginGoogle({
+            email: profile.email,
+            name: profile.name || profile.given_name || profile.email?.split('@')[0],
+            avatarUrl: profile.picture,
+            accessToken,
+          });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Falha na autenticação Google.');
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+
       if (event.data?.type !== 'NEXTPLAY_GOOGLE_AUTH_SUCCESS') return;
-      const { email, name, avatarUrl } = event.data;
+      const { email, name } = event.data;
       if (!email) return;
 
       setIsGoogleModalOpen(false);
@@ -539,42 +626,68 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     popup.focus();
   };
 
-  // Roteador Inteligente Multi-Dispositivo (Web, IP da VPS, Celular, Tablet e Android TV)
-  // Contorna a exigência do Google de ter Client IDs separados (Web vs Android SHA-1 vs TV)
+  // Login Oficial Google OAuth 2.0 (accounts.google.com) Unificado:
+  // Usa 1 ÚNICO Client ID do tipo "Aplicativo da Web" para Web, VPS, Celular, Tablet e Android TV!
   const handleOpenGooglePopup = () => {
     setError(null);
     const clientId = appConfig.googleClientId?.trim();
 
-    const isAndroidOrTv =
-      Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
-      /;\s*wv\)/i.test(navigator.userAgent) ||
-      /Android|AFT|SmartTV|BRAVIA|GoogleTV/i.test(navigator.userAgent);
+    if (!clientId) {
+      setError(
+        'Para usar o login oficial do Google (accounts.google.com), acesse o Painel Admin (/admin -> Configurações) e cole o seu Google Client ID do tipo "Aplicativo da Web".'
+      );
+      return;
+    }
 
     const hostname = window.location.hostname;
     const isRawIpOrigin = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
-    const isAllowedGoogleWebOrigin =
-      !isAndroidOrTv &&
-      !isRawIpOrigin &&
-      (hostname === 'localhost' || window.location.protocol === 'https:');
 
-    // Usa o OAuth Web Oficial APENAS quando estiver em domínio HTTPS (ou localhost) no navegador Web.
-    // Em IP da VPS (http://IP:8090), Celular APK, Tablet ou Android TV, usa direto o Seletor Universal!
-    if (clientId && isAllowedGoogleWebOrigin && window.google?.accounts?.oauth2) {
+    // O Google Cloud Console proíbe IP numérico puro (ex: http://177.x.x.x:8090) no OAuth,
+    // mas aceita o domínio espelho gratuito .sslip.io (ex: http://177.x.x.x.sslip.io:8090) que aponta direto para o mesmo IP!
+    if (isRawIpOrigin) {
+      const portPart = window.location.port ? `:${window.location.port}` : '';
+      const sslipOrigin = `${window.location.protocol}//${hostname}.sslip.io${portPart}`;
+      const oauthUrl =
+        `https://accounts.google.com/o/oauth2/v2/auth` +
+        `?client_id=${encodeURIComponent(clientId)}` +
+        `&redirect_uri=${encodeURIComponent(sslipOrigin)}` +
+        `&response_type=token` +
+        `&scope=${encodeURIComponent('openid email profile')}` +
+        `&prompt=select_account`;
+      window.location.href = oauthUrl;
+      return;
+    }
+
+    const isCapacitorApk = Boolean((window as any).Capacitor?.isNativePlatform?.());
+
+    // No APK Android (Celular, Tablet, Android TV), a origem é http://localhost e redireciona para o accounts.google.com real
+    if (isCapacitorApk) {
+      const redirectUri = window.location.origin; // http://localhost
+      const oauthUrl =
+        `https://accounts.google.com/o/oauth2/v2/auth` +
+        `?client_id=${encodeURIComponent(clientId)}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=token` +
+        `&scope=${encodeURIComponent('openid email profile')}` +
+        `&prompt=select_account`;
+      window.location.href = oauthUrl;
+      return;
+    }
+
+    // No Navegador Web, usa o popup oficial Google Identity Services (initTokenClient)
+    if (window.google?.accounts?.oauth2) {
       try {
         const tokenClient = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
           scope: 'openid email profile',
           prompt: 'select_account',
-          error_callback: () => {
-            openUniversalGoogleFallback();
-          },
           callback: async (tokenResponse) => {
             if (tokenResponse.error || !tokenResponse.access_token) {
-              openUniversalGoogleFallback();
+              setError('Autenticação Google cancelada ou não autorizada.');
               return;
             }
             setIsLoading(true);
-            setLoadingText('Vinculando sua conta Google...');
+            setLoadingText('Validando sua conta oficial no Google...');
             try {
               const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                 headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
@@ -583,9 +696,13 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
               await onLoginGoogle({
                 email: profile.email,
                 name: profile.name || profile.given_name || profile.email?.split('@')[0],
+                avatarUrl: profile.picture,
+                accessToken: tokenResponse.access_token,
               });
-            } catch {
-              openUniversalGoogleFallback();
+            } catch (err) {
+              setError(
+                err instanceof Error ? err.message : 'Erro ao validar dados da conta Google.'
+              );
             } finally {
               setIsLoading(false);
             }
@@ -594,12 +711,32 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
         tokenClient.requestAccessToken({ prompt: 'select_account' });
         return;
       } catch {
-        openUniversalGoogleFallback();
-        return;
+        // Fallback para popup OAuth2 direto do accounts.google.com abaixo
       }
     }
 
-    openUniversalGoogleFallback();
+    // Fallback: Abre o Popup Oficial do accounts.google.com/o/oauth2/v2/auth
+    const redirectUri = window.location.origin;
+    const oauthUrl =
+      `https://accounts.google.com/o/oauth2/v2/auth` +
+      `?client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=token` +
+      `&scope=${encodeURIComponent('openid email profile')}` +
+      `&prompt=select_account`;
+
+    const width = 500;
+    const height = 620;
+    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+    const popup = window.open(
+      oauthUrl,
+      'GoogleOAuthOfficialPopup',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+    if (!popup) {
+      window.location.href = oauthUrl;
+    }
   };
 
   // Submit Login com Google (Fallback caso o navegador bloqueie popups)

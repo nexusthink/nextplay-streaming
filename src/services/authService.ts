@@ -331,6 +331,7 @@ export async function loginWithGoogle(payload: {
   name?: string;
   avatarUrl?: string;
   credential?: string;
+  accessToken?: string;
 }): Promise<{ token: string; user: UserAccount }> {
   try {
     const res = await apiFetch('/api/auth/google', {

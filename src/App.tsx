@@ -1135,7 +1135,9 @@ export const App: React.FC = () => {
   const handleLoginGoogle = async (payload: {
     email?: string;
     name?: string;
+    avatarUrl?: string;
     credential?: string;
+    accessToken?: string;
   }) => {
     const { user } = await loginWithGoogle(payload);
     setCurrentUser(user);

@@ -27,6 +27,17 @@ public class MainActivity extends BridgeActivity {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
             settings.setUseWideViewPort(true);
             settings.setLoadWithOverviewMode(true);
+
+            // Remove marcador "; wv" do WebView para permitir login oficial Google OAuth (accounts.google.com)
+            // usando o mesmo Client ID Web em Celular, Tablet e Android TV sem erro 403 disallowed_useragent
+            String defaultUa = settings.getUserAgentString();
+            if (defaultUa != null) {
+                String cleanChromeUa = defaultUa
+                    .replace("; wv)", ")")
+                    .replace("; wv", "")
+                    .replace("Version/4.0 ", "");
+                settings.setUserAgentString(cleanChromeUa);
+            }
         }
     }
 }

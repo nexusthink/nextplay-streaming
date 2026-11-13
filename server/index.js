@@ -373,11 +373,30 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// Login / Cadastro com Conta Google (Suporta JWT real do Google Identity Services ou seletor Google local)
-app.post('/api/auth/google', (req, res) => {
-  let { email, name, avatarUrl, googleSub, credential } = req.body || {};
+// Login / Cadastro com Conta Google Oficial (Valida accessToken ou JWT diretamente na API do Google)
+app.post('/api/auth/google', async (req, res) => {
+  let { email, name, avatarUrl, googleSub, credential, accessToken } = req.body || {};
 
-  // Se veio um JWT oficial do Google Identity Services, decodifica o payload
+  // 1. Se veio um access_token OAuth2 oficial do Google, valida diretamente nos servidores do Google
+  if (accessToken && typeof accessToken === 'string') {
+    try {
+      const gRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!gRes.ok) {
+        return res.status(401).json({ error: 'Token OAuth do Google inválido ou expirado.' });
+      }
+      const gProfile = await gRes.json();
+      email = gProfile.email;
+      name = gProfile.name || gProfile.given_name || email;
+      avatarUrl = gProfile.picture || avatarUrl;
+      googleSub = gProfile.sub || googleSub;
+    } catch {
+      return res.status(502).json({ error: 'Falha ao validar conta nos servidores do Google.' });
+    }
+  }
+
+  // 2. Se veio um JWT oficial (id_token / credential) do Google Identity Services
   if (credential && typeof credential === 'string' && credential.split('.').length === 3) {
     try {
       const payloadJson = JSON.parse(Buffer.from(credential.split('.')[1], 'base64url').toString('utf-8'));
