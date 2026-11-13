@@ -35,6 +35,7 @@ declare global {
             client_id: string;
             scope: string;
             prompt?: string;
+            error_callback?: (err?: unknown) => void;
             callback: (response: { access_token?: string; error?: string }) => void;
           }) => { requestAccessToken: (overrideConfig?: { prompt?: string }) => void };
         };
@@ -265,60 +266,18 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     return () => window.removeEventListener('message', handlePopupMessage);
   }, [onLoginGoogle]);
 
-  // Abre a Janela Popup Direta de Seleção de Conta Google
-  const handleOpenGooglePopup = () => {
-    setError(null);
-    const clientId = appConfig.googleClientId?.trim();
-
-    // 1. Se o Admin configurou um Google OAuth Client ID oficial, abre o popup nativo accounts.google.com
-    if (clientId && window.google?.accounts?.oauth2) {
-      try {
-        const tokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: 'openid email profile',
-          prompt: 'select_account',
-          callback: async (tokenResponse) => {
-            if (tokenResponse.error || !tokenResponse.access_token) {
-              setError('Autenticação Google cancelada ou não autorizada.');
-              return;
-            }
-            setIsLoading(true);
-            setLoadingText('Vinculando sua conta Google...');
-            try {
-              const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-              });
-              const profile = await userInfoRes.json();
-              await onLoginGoogle({
-                email: profile.email,
-                name: profile.name || profile.given_name || profile.email?.split('@')[0],
-              });
-            } catch (err) {
-              setError(
-                err instanceof Error ? err.message : 'Erro ao obter dados da conta Google.'
-              );
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        });
-        tokenClient.requestAccessToken({ prompt: 'select_account' });
-        return;
-      } catch {
-        // Fallback para a janela popup direta abaixo
-      }
-    }
-
-    // No aplicativo Android Nativo (Celular, Tablet, Android TV), WebViews não usam window.opener em popups externos
+  // Abre a Janela Popup Direta de Seleção de Conta Google (Universal: Web, IP, Celular, Tablet e Android TV)
+  const openUniversalGoogleFallback = () => {
     const isAndroidWebView =
       Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
-      /;\s*wv\)/i.test(navigator.userAgent);
+      /;\s*wv\)/i.test(navigator.userAgent) ||
+      /Android|AFT|SmartTV|BRAVIA|GoogleTV/i.test(navigator.userAgent);
+
     if (isAndroidWebView) {
       setIsGoogleModalOpen(true);
       return;
     }
 
-    // 2. Abre a Janela Popup Externa Direta (estilo Seletor de Contas Google)
     const width = 450;
     const height = 580;
     const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
@@ -331,7 +290,6 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     );
 
     if (!popup) {
-      // Caso o navegador bloqueie popups, abre o seletor na tela
       setIsGoogleModalOpen(true);
       return;
     }
@@ -579,6 +537,69 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
 </html>`);
     popup.document.close();
     popup.focus();
+  };
+
+  // Roteador Inteligente Multi-Dispositivo (Web, IP da VPS, Celular, Tablet e Android TV)
+  // Contorna a exigência do Google de ter Client IDs separados (Web vs Android SHA-1 vs TV)
+  const handleOpenGooglePopup = () => {
+    setError(null);
+    const clientId = appConfig.googleClientId?.trim();
+
+    const isAndroidOrTv =
+      Boolean((window as any).Capacitor?.isNativePlatform?.()) ||
+      /;\s*wv\)/i.test(navigator.userAgent) ||
+      /Android|AFT|SmartTV|BRAVIA|GoogleTV/i.test(navigator.userAgent);
+
+    const hostname = window.location.hostname;
+    const isRawIpOrigin = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    const isAllowedGoogleWebOrigin =
+      !isAndroidOrTv &&
+      !isRawIpOrigin &&
+      (hostname === 'localhost' || window.location.protocol === 'https:');
+
+    // Usa o OAuth Web Oficial APENAS quando estiver em domínio HTTPS (ou localhost) no navegador Web.
+    // Em IP da VPS (http://IP:8090), Celular APK, Tablet ou Android TV, usa direto o Seletor Universal!
+    if (clientId && isAllowedGoogleWebOrigin && window.google?.accounts?.oauth2) {
+      try {
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          error_callback: () => {
+            openUniversalGoogleFallback();
+          },
+          callback: async (tokenResponse) => {
+            if (tokenResponse.error || !tokenResponse.access_token) {
+              openUniversalGoogleFallback();
+              return;
+            }
+            setIsLoading(true);
+            setLoadingText('Vinculando sua conta Google...');
+            try {
+              const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+              });
+              const profile = await userInfoRes.json();
+              await onLoginGoogle({
+                email: profile.email,
+                name: profile.name || profile.given_name || profile.email?.split('@')[0],
+              });
+            } catch {
+              openUniversalGoogleFallback();
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        });
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      } catch {
+        openUniversalGoogleFallback();
+        return;
+      }
+    }
+
+    openUniversalGoogleFallback();
   };
 
   // Submit Login com Google (Fallback caso o navegador bloqueie popups)

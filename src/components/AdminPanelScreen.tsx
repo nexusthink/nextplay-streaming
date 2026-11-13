@@ -1120,19 +1120,33 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-                Google OAuth Client ID (Opcional)
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  Google OAuth Client ID — Único do Tipo &quot;Aplicativo da Web&quot; (Opcional)
+                </label>
+                {googleClientId && (
+                  <button
+                    type="button"
+                    onClick={() => setGoogleClientId('')}
+                    className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 cursor-pointer"
+                  >
+                    Limpar (Ativar Seletor Universal Multi-Dispositivo)
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 value={googleClientId}
                 onChange={(e) => setGoogleClientId(e.target.value)}
-                placeholder="Ex: 123456789-abcdef.apps.googleusercontent.com (vazio = seletor rápido Google local)"
+                placeholder="Deixe em branco para funcionar em IP, Web, Celular e TV sem restrição de Client ID"
                 className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-red-500 font-mono"
               />
-              <p className="text-[11px] text-gray-500 mt-1">
-                Se preenchido, usa o botão oficial Google Identity Services; se deixado em branco,
-                habilita o login rápido com conta Google direto no navegador.
+              <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+                <strong className="text-emerald-400">Dica Multi-Dispositivo (Web + Celular + Android TV + IP):</strong>{' '}
+                Você <strong>não precisa</strong> criar IDs separados para Android ou TV. Deixe este campo{' '}
+                <strong>em branco</strong> (ou coloque apenas 1 ID do tipo <em>Aplicativo da Web</em>): o NextPlay
+                detecta automaticamente quando o acesso vem de Celular, TV Box ou IP da VPS e abre o{' '}
+                <strong>Seletor Universal de Conta Google</strong> sem bloqueio de origem ou SHA-1.
               </p>
             </div>
 
