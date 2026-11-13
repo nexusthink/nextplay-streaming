@@ -811,17 +811,11 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
           className="flex items-center gap-3"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <div className="w-9 h-9 rounded-xl bg-[#0e1722] border border-cyan-400/40 flex items-center justify-center shadow-neon-cyan">
-            <svg viewBox="0 0 40 40" className="w-6 h-6">
-              <path d="M9 9 L23 20 L9 31 Z" fill="#0891b2" opacity="0.75" />
-              <path d="M16 8 L32 20 L16 32 Z" fill="#00f2fe" />
-            </svg>
-          </div>
-          <div className="flex items-baseline gap-1">
-            <span className="font-black tracking-tight text-xl text-white">
-              {appConfig.appName || 'NextPlay'}
-            </span>
-          </div>
+          <img
+            src="/brand/logo-full.png"
+            alt={appConfig.appName || 'NextPlay'}
+            className="h-9 sm:h-10 w-auto object-contain"
+          />
         </div>
 
         <div
@@ -909,7 +903,14 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
           =================================================================== */
           <div className="max-w-md mx-auto w-full py-2">
             <div className="mb-6 text-center">
-              <div className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-cyan-400 mb-2">
+              <div className="flex justify-center mb-3">
+                <img
+                  src="/brand/logo-full.png"
+                  alt="NextPlay"
+                  className="h-14 sm:h-16 w-auto object-contain drop-shadow-[0_6px_25px_rgba(132,204,22,0.3)]"
+                />
+              </div>
+              <div className="inline-flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-lime-400 mb-2">
                 <Sparkles className="w-3.5 h-3.5" />
                 Conta Unificada NextPlay
               </div>

@@ -505,18 +505,11 @@ export const ProfileGateScreen: React.FC<ProfileGateScreenProps> = ({
       {/* Top Bar */}
       <header className="relative z-10 flex items-center justify-between px-6 sm:px-12 py-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#0e1722] border border-cyan-400/40 flex items-center justify-center shadow-neon-cyan">
-            <svg viewBox="0 0 40 40" className="w-6 h-6">
-              <path d="M9 9 L23 20 L9 31 Z" fill="#0891b2" opacity="0.75" />
-              <path d="M16 8 L32 20 L16 32 Z" fill="#00f2fe" />
-            </svg>
-          </div>
-          <div className="flex items-baseline gap-0.5">
-            <span className="font-black tracking-tight text-2xl text-white">Next</span>
-            <span className="font-black tracking-tight text-2xl bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">
-              Play
-            </span>
-          </div>
+          <img
+            src="/brand/logo-full.png"
+            alt="NextPlay"
+            className="h-10 sm:h-11 w-auto object-contain"
+          />
         </div>
 
         <div className="flex items-center gap-3">

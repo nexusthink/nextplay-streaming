@@ -329,84 +329,29 @@ export const NextPlayIntroAnimation: React.FC<NextPlayIntroAnimationProps> = ({ 
         <span className="text-[10px] font-bold uppercase tracking-wider">Áudio de Entrada Ativo</span>
       </div>
 
-      {/* Núcleo Central: Prisma Duplo "NEXT >> PLAY" + Tipografia Holográfica */}
+      {/* Núcleo Central: Logotipo Oficial NextPlay com Recorte e Enquadramento */}
       <div className="relative z-10 flex flex-col items-center text-center px-6 -mt-12">
-        {/* Ícone Duplo Prisma NextPlay (Assinatura da Imagem Oficial) */}
         <div
-          className="relative w-28 h-28 flex items-center justify-center mb-4 transition-transform duration-500"
+          className="relative flex items-center justify-center mb-5 transition-transform duration-500"
           style={{ transform: `scale(${prismScale})` }}
         >
-          <div className="absolute inset-0 rounded-3xl bg-cyan-500/15 blur-2xl animate-pulse" />
-          <svg viewBox="0 0 120 120" className="w-28 h-28 overflow-visible">
-            <defs>
-              <linearGradient id="np-prism-back" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#0891b2" />
-                <stop offset="100%" stopColor="#1e3a8a" />
-              </linearGradient>
-              <linearGradient id="np-prism-front" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#7ef9ff" />
-                <stop offset="50%" stopColor="#00f2fe" />
-                <stop offset="100%" stopColor="#0d9488" />
-              </linearGradient>
-              <filter id="np-neon-glow" x="-40%" y="-40%" width="180%" height="180%">
-                <feGaussianBlur stdDeviation="6" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            </defs>
-
-            {/* Hexágono Técnico de Precisão ao Fundo */}
-            <polygon
-              points="60,8 106,34 106,86 60,112 14,86 14,34"
-              fill="rgba(9, 16, 26, 0.85)"
-              stroke="rgba(0, 242, 254, 0.35)"
-              strokeWidth="2"
-            />
-
-            {/* Primeiro Prisma (NEXT >) */}
-            <path
-              d="M34 32 L74 60 L34 88 Z"
-              fill="url(#np-prism-back)"
-              stroke="#00f2fe"
-              strokeWidth="1.5"
-              opacity="0.75"
-              className="transition-all duration-700"
-              style={{
-                transform: bootStage >= 1 ? 'translateX(0px)' : 'translateX(-24px)',
-              }}
-            />
-
-            {/* Segundo Prisma Principal (PLAY >) com Brilho Neon */}
-            <path
-              d="M52 28 L96 60 L52 92 Z"
-              fill="url(#np-prism-front)"
-              filter="url(#np-neon-glow)"
-              className="transition-all duration-700"
-              style={{
-                transform: bootStage >= 1 ? 'translateX(0px)' : 'translateX(24px)',
-              }}
-            />
-          </svg>
-        </div>
-
-        {/* Logotipo Tipográfico NextPlay */}
-        <div className="flex items-baseline gap-1 tracking-tight">
-          <span className="text-4xl sm:text-6xl font-black text-white drop-shadow-[0_4px_24px_rgba(255,255,255,0.2)]">
-            Next
-          </span>
-          <span className="text-4xl sm:text-6xl font-black bg-gradient-to-r from-[#5efce8] via-[#00f2fe] to-[#0ea5e9] bg-clip-text text-transparent drop-shadow-[0_0_28px_rgba(0,242,254,0.65)]">
-            Play
-          </span>
+          <div className="absolute inset-0 rounded-3xl bg-lime-500/20 blur-3xl animate-pulse" />
+          <img
+            src="/brand/logo-full.png"
+            alt="NextPlay"
+            className="relative h-24 sm:h-32 w-auto object-contain drop-shadow-[0_10px_35px_rgba(132,204,22,0.45)]"
+          />
         </div>
 
         {/* Subtítulo Sofisticado Estilo Cinema */}
-        <p className="mt-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.45em] text-cyan-200/70">
+        <p className="mt-2 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.45em] text-lime-200/80">
           Experiência de Streaming em Alta Definição
         </p>
 
-        {/* Linha Fina Luminosa de Progresso Cinematográfica (Substitui boxes de terminal hacker) */}
+        {/* Linha Fina Luminosa de Progresso Cinematográfica */}
         <div className="mt-14 w-48 sm:w-64 h-1 rounded-full bg-slate-800/80 overflow-hidden relative">
           <div
-            className="h-full bg-gradient-to-r from-cyan-400 via-teal-300 to-cyan-200 rounded-full transition-all duration-300 shadow-[0_0_12px_rgba(0,242,254,0.8)]"
+            className="h-full bg-gradient-to-r from-lime-400 via-emerald-400 to-green-300 rounded-full transition-all duration-300 shadow-[0_0_12px_rgba(132,204,22,0.8)]"
             style={{
               width: bootStage === 0 ? '20%' : bootStage === 1 ? '55%' : bootStage === 2 ? '85%' : '100%',
             }}

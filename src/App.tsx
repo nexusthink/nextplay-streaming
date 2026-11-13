@@ -1425,7 +1425,7 @@ export const App: React.FC = () => {
               className="flex items-center gap-6 lg:gap-8"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             >
-              {/* Logo NextPlay */}
+              {/* Logo Oficial NextPlay */}
               <div
                 onClick={() => {
                   setSelectedNav('all');
@@ -1434,18 +1434,11 @@ export const App: React.FC = () => {
                 }}
                 className="flex items-center gap-2.5 cursor-pointer group"
               >
-                <div className="w-8 h-8 rounded-xl bg-[#0e1722] border border-cyan-400/40 flex items-center justify-center shadow-neon-cyan group-hover:border-cyan-300 transition">
-                  <svg viewBox="0 0 40 40" className="w-5 h-5">
-                    <path d="M9 9 L23 20 L9 31 Z" fill="#0891b2" opacity="0.75" />
-                    <path d="M16 8 L32 20 L16 32 Z" fill="#00f2fe" />
-                  </svg>
-                </div>
-                <div className="flex items-baseline gap-0.5">
-                  <span className="font-black tracking-tight text-xl text-white">Next</span>
-                  <span className="font-black tracking-tight text-xl bg-gradient-to-r from-cyan-400 to-teal-400 bg-clip-text text-transparent">
-                    Play
-                  </span>
-                </div>
+                <img
+                  src="/brand/logo-full.png"
+                  alt="NextPlay"
+                  className="h-9 sm:h-10 w-auto object-contain group-hover:scale-105 transition-transform"
+                />
               </div>
 
               {/* Links de Navegação Estilo Netflix / HBO */}

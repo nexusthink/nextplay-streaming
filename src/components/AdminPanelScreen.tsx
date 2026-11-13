@@ -539,10 +539,12 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-[#0c0e16]/90 backdrop-blur-xl border-b border-white/10 px-4 sm:px-8 py-4">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-400">
-              <Shield className="w-5 h-5" />
-            </div>
+          <div className="flex items-center gap-3.5">
+            <img
+              src="/brand/logo-icon.png"
+              alt="NextPlay"
+              className="w-10 h-10 object-contain"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-black tracking-tight">
