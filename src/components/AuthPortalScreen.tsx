@@ -642,15 +642,14 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     const hostname = window.location.hostname;
     const isRawIpOrigin = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
 
-    // O Google Cloud Console proíbe IP numérico puro (ex: http://177.x.x.x:8090) no OAuth,
-    // mas aceita o domínio espelho gratuito .sslip.io (ex: http://177.x.x.x.sslip.io:8090) que aponta direto para o mesmo IP!
-    if (isRawIpOrigin) {
-      const portPart = window.location.port ? `:${window.location.port}` : '';
-      const sslipOrigin = `${window.location.protocol}//${hostname}.sslip.io${portPart}`;
+    // O Google Cloud Console proíbe IP numérico puro (ex: http://184.107.141.88:8090) e HTTP sem SSL.
+    // Se o cliente abriu pelo IP ou HTTP da VPS, redireciona o fluxo OAuth para o domínio HTTPS oficial da VPS!
+    if (isRawIpOrigin || (hostname.includes('vps9818.panel.icontainer.run') && window.location.protocol === 'http:')) {
+      const httpsOrigin = 'https://nextplay.vps9818.panel.icontainer.run';
       const oauthUrl =
         `https://accounts.google.com/o/oauth2/v2/auth` +
         `?client_id=${encodeURIComponent(clientId)}` +
-        `&redirect_uri=${encodeURIComponent(sslipOrigin)}` +
+        `&redirect_uri=${encodeURIComponent(httpsOrigin)}` +
         `&response_type=token` +
         `&scope=${encodeURIComponent('openid email profile')}` +
         `&prompt=select_account`;
@@ -934,11 +933,10 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                     setAuthTab('login');
                     setError(null);
                   }}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    authTab === 'login'
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${authTab === 'login'
                       ? 'bg-gradient-to-r from-cyan-500/25 to-teal-500/15 text-cyan-200 border border-cyan-400/50 shadow-neon-cyan'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                  }`}
+                    }`}
                 >
                   Entrar na Conta
                 </button>
@@ -949,11 +947,10 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                     setAuthTab('register');
                     setError(null);
                   }}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    authTab === 'register'
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${authTab === 'register'
                       ? 'bg-gradient-to-r from-cyan-500/25 to-teal-500/15 text-cyan-200 border border-cyan-400/50 shadow-neon-cyan'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                  }`}
+                    }`}
                 >
                   Criar Nova Conta
                 </button>
@@ -1190,19 +1187,17 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                             key={srv.id}
                             type="button"
                             onClick={() => setSelectedServerId(srv.id)}
-                            className={`p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer ${
-                              isSelected
+                            className={`p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between gap-3 cursor-pointer ${isSelected
                                 ? 'bg-cyan-500/15 border-cyan-400 shadow-neon-cyan'
                                 : 'bg-[#070d14] border-slate-800 hover:border-slate-700'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div
-                                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                                  isSelected
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isSelected
                                     ? 'bg-cyan-400 text-slate-950'
                                     : 'bg-slate-800 text-slate-400'
-                                }`}
+                                  }`}
                               >
                                 <Server className="w-4 h-4" />
                               </div>
@@ -1319,11 +1314,10 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                             key={m}
                             type="button"
                             onClick={() => onChangeUpscaling(m)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                              upscaling === m
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${upscaling === m
                                 ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
                                 : 'bg-[#070d14] border-slate-800 text-slate-500 hover:text-slate-300'
-                            }`}
+                              }`}
                           >
                             {m.toUpperCase()}
                           </button>
@@ -1339,11 +1333,10 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                             key={z}
                             type="button"
                             onClick={() => onChangeZeroDelay(z)}
-                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                              zeroDelay === z
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${zeroDelay === z
                                 ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
                                 : 'bg-[#070d14] border-slate-800 text-slate-500 hover:text-slate-300'
-                            }`}
+                              }`}
                           >
                             {z === 'off' ? 'PADRÃO' : z === 'equilibrado' ? 'EQUILIBRADO' : 'ULTRA'}
                           </button>
@@ -1356,11 +1349,10 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                       <button
                         type="button"
                         onClick={() => onChangeSmartAudio(!smartAudio)}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                          smartAudio
+                        className={`px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${smartAudio
                             ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
                             : 'bg-[#070d14] border-slate-800 text-slate-500'
-                        }`}
+                          }`}
                       >
                         {smartAudio ? 'ATIVADO' : 'DESLIGADO'}
                       </button>

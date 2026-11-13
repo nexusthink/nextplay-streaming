@@ -1148,21 +1148,15 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
                 </ol>
                 <div className="grid grid-cols-1 gap-1.5 pt-1 font-mono text-[11px]">
                   <div className="px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-emerald-300 flex items-center justify-between">
-                    <span>http://localhost</span>
+                    <span>https://nextplay.vps9818.panel.icontainer.run</span>
                     <span className="text-[10px] text-gray-400 font-sans">
-                      (Faz funcionar no APK Celular, Tablet e Android TV)
+                      (Domínio HTTPS oficial da sua VPS — aceito pelo Google!)
                     </span>
                   </div>
                   <div className="px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-emerald-300 flex items-center justify-between">
-                    <span>
-                      {/^(\d{1,3}\.){3}\d{1,3}$/.test(window.location.hostname)
-                        ? `${window.location.protocol}//${window.location.hostname}.sslip.io${
-                            window.location.port ? `:${window.location.port}` : ''
-                          }`
-                        : window.location.origin}
-                    </span>
+                    <span>http://localhost</span>
                     <span className="text-[10px] text-gray-400 font-sans">
-                      (Faz funcionar na sua VPS / Navegador Web)
+                      (Faz funcionar no APK Celular, Tablet e Android TV)
                     </span>
                   </div>
                 </div>

@@ -96,10 +96,10 @@ export function getApiServerBaseUrl(): string {
     return (
       localStorage.getItem('nextplay_api_server_url_v1') ||
       envUrl ||
-      'http://192.168.80.110:4150'
+      'https://nextplay.vps9818.panel.icontainer.run'
     ).replace(/\/+$/, '');
   } catch {
-    return (envUrl || 'http://192.168.80.110:4150').replace(/\/+$/, '');
+    return (envUrl || 'https://nextplay.vps9818.panel.icontainer.run').replace(/\/+$/, '');
   }
 }
 
@@ -111,7 +111,7 @@ export function setApiServerBaseUrl(url: string) {
   }
 }
 
-// Helper que tenta chamar '/api/...', depois o IP da rede local (Celular/Tablet/Android TV) e 'http://127.0.0.1:4150'
+// Helper que tenta chamar '/api/...', a VPS (HTTPS e IP:8090) e o servidor local (Celular/Tablet/Android TV)
 async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
   const isCapacitorNative =
     typeof window !== 'undefined' &&
@@ -119,7 +119,12 @@ async function apiFetch(path: string, options?: RequestInit): Promise<Response> 
       (window.location.hostname === 'localhost' && !window.location.port));
 
   const candidates = isCapacitorNative
-    ? [getApiServerBaseUrl(), 'http://192.168.80.110:4150', 'http://10.0.2.2:4150']
+    ? [
+      getApiServerBaseUrl(),
+      'https://nextplay.vps9818.panel.icontainer.run',
+      'http://184.107.141.88:8090',
+      'http://192.168.80.110:4150',
+    ]
     : ['', 'http://127.0.0.1:4150', getApiServerBaseUrl()];
 
   let lastErr: unknown = null;
@@ -734,14 +739,14 @@ export async function adminCreateUser(payload: {
       iptvLink:
         srv && payload.iptvUsername && payload.iptvPassword
           ? {
-              serverId: srv.id,
-              serverName: srv.name,
-              format: srv.format,
-              username: payload.iptvUsername,
-              password: payload.iptvPassword,
-              linkedAt: Date.now(),
-              accountInfo: null,
-            }
+            serverId: srv.id,
+            serverName: srv.name,
+            format: srv.format,
+            username: payload.iptvUsername,
+            password: payload.iptvPassword,
+            linkedAt: Date.now(),
+            accountInfo: null,
+          }
           : null,
     };
     db.users.push(user);
