@@ -14,6 +14,7 @@ import {
   createToken,
   verifyToken,
   sanitizeUserForClient,
+  ensureUserProfiles,
 } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -485,6 +486,121 @@ app.post('/api/user/link-iptv', requireUserAuth, (req, res) => {
 app.delete('/api/user/link-iptv', requireUserAuth, (req, res) => {
   req.user.iptvLink = null;
   saveDb(db);
+  return res.json({
+    user: sanitizeUserForClient(req.user, db.servers),
+  });
+});
+
+// ============================================================================
+// 1.1.2 ROTAS DE PERFIS ESTILO NETFLIX (ATÉ 5 PERFIS + HISTÓRICO E FAVORITOS)
+// ============================================================================
+
+// Criar novo perfil na conta do cliente (Limite máximo: 5 perfis)
+app.post('/api/user/profiles', requireUserAuth, (req, res) => {
+  const profiles = ensureUserProfiles(req.user);
+  if (profiles.length >= 5) {
+    return res.status(400).json({ error: 'Limite máximo de 5 perfis por conta atingido.' });
+  }
+
+  const { name, avatarId, isKids, pin } = req.body || {};
+  const cleanName = String(name || '').trim().slice(0, 22);
+  if (!cleanName) {
+    return res.status(400).json({ error: 'Informe um nome para o perfil.' });
+  }
+
+  const cleanPin = pin && /^\d{4}$/.test(String(pin).trim()) ? String(pin).trim() : null;
+
+  const newProfile = {
+    id: `prf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name: cleanName,
+    avatarId: String(avatarId || 'cyber-wolf').trim(),
+    isKids: Boolean(isKids),
+    pin: cleanPin,
+    favorites: [],
+    history: [],
+    createdAt: Date.now(),
+  };
+
+  req.user.profiles = [...profiles, newProfile];
+  saveDb(db);
+
+  return res.json({
+    profile: newProfile,
+    user: sanitizeUserForClient(req.user, db.servers),
+  });
+});
+
+// Editar perfil existente (Nome, Avatar, Modo Kids, PIN de Reserva)
+app.put('/api/user/profiles/:profileId', requireUserAuth, (req, res) => {
+  const { profileId } = req.params;
+  const profiles = ensureUserProfiles(req.user);
+  const target = profiles.find((p) => p.id === profileId);
+  if (!target) {
+    return res.status(404).json({ error: 'Perfil não encontrado.' });
+  }
+
+  const { name, avatarId, isKids, pin } = req.body || {};
+  if (name !== undefined) {
+    const cleanName = String(name).trim().slice(0, 22);
+    if (cleanName) target.name = cleanName;
+  }
+  if (avatarId !== undefined) {
+    target.avatarId = String(avatarId).trim() || target.avatarId;
+  }
+  if (isKids !== undefined) {
+    target.isKids = Boolean(isKids);
+  }
+  if (pin !== undefined) {
+    target.pin = pin && /^\d{4}$/.test(String(pin).trim()) ? String(pin).trim() : null;
+  }
+
+  req.user.profiles = profiles;
+  saveDb(db);
+
+  return res.json({
+    profile: target,
+    user: sanitizeUserForClient(req.user, db.servers),
+  });
+});
+
+// Sincronizar Histórico ("Continuar Assistindo") e Favoritos ("Minha Lista") do Perfil
+app.put('/api/user/profiles/:profileId/state', requireUserAuth, (req, res) => {
+  const { profileId } = req.params;
+  const profiles = ensureUserProfiles(req.user);
+  const target = profiles.find((p) => p.id === profileId);
+  if (!target) {
+    return res.status(404).json({ error: 'Perfil não encontrado.' });
+  }
+
+  const { favorites, history } = req.body || {};
+  if (Array.isArray(favorites)) {
+    target.favorites = favorites.slice(0, 500);
+  }
+  if (Array.isArray(history)) {
+    target.history = history.slice(0, 50);
+  }
+
+  req.user.profiles = profiles;
+  saveDb(db);
+
+  return res.json({
+    ok: true,
+    profile: target,
+  });
+});
+
+// Excluir um perfil (mantém sempre ao menos 1 perfil na conta)
+app.delete('/api/user/profiles/:profileId', requireUserAuth, (req, res) => {
+  const { profileId } = req.params;
+  const profiles = ensureUserProfiles(req.user);
+  if (profiles.length <= 1) {
+    return res.status(400).json({ error: 'A conta precisa ter pelo menos 1 perfil ativo.' });
+  }
+
+  const nextProfiles = profiles.filter((p) => p.id !== profileId);
+  req.user.profiles = nextProfiles;
+  saveDb(db);
+
   return res.json({
     user: sanitizeUserForClient(req.user, db.servers),
   });

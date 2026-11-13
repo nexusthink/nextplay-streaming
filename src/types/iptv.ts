@@ -44,6 +44,17 @@ export interface UserIptvLink {
   accountInfo?: XtreamAccountInfo | null;
 }
 
+export interface UserSubProfile {
+  id: string;
+  name: string;
+  avatarId: string;
+  isKids?: boolean;
+  pin?: string | null;
+  favorites?: string[];
+  history?: WatchHistoryItem[];
+  createdAt: number;
+}
+
 export interface UserAccount {
   id: string;
   name: string;
@@ -54,6 +65,7 @@ export interface UserAccount {
   createdAt: number;
   lastLoginAt?: number | null;
   iptvLink?: UserIptvLink | null;
+  profiles?: UserSubProfile[];
 }
 
 export interface PublicAppConfig {

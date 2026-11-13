@@ -3,6 +3,8 @@ import {
   PublicAppConfig,
   PublicServerOption,
   UserAccount,
+  UserSubProfile,
+  WatchHistoryItem,
   XtreamAccountInfo,
 } from '../types/iptv';
 
@@ -848,5 +850,212 @@ export async function adminUpdateSettings(payload: {
     if (payload.adminNewPassword) db.settings.adminPassword = payload.adminNewPassword;
     saveLocalFallbackDb(db);
     return db.settings;
+  }
+}
+
+// ============================================================================
+// PERFIS ESTILO NETFLIX (ATÉ 5 PERFIS COM AVATARES, PIN RESERVADO E HISTÓRICO)
+// ============================================================================
+
+export function ensureClientUserProfiles(user: UserAccount | null): UserSubProfile[] {
+  if (!user) {
+    return [
+      {
+        id: 'prf-demo-1',
+        name: 'Principal',
+        avatarId: 'cyber-wolf',
+        isKids: false,
+        pin: null,
+        favorites: [],
+        history: [],
+        createdAt: Date.now(),
+      },
+    ];
+  }
+  if (Array.isArray(user.profiles) && user.profiles.length > 0) {
+    return user.profiles.slice(0, 5);
+  }
+  const firstName = (user.name || 'Principal').trim().split(/\s+/)[0].slice(0, 18);
+  return [
+    {
+      id: `prf-${user.id}-1`,
+      name: firstName || 'Principal',
+      avatarId: 'cyber-wolf',
+      isKids: false,
+      pin: null,
+      favorites: [],
+      history: [],
+      createdAt: Date.now(),
+    },
+  ];
+}
+
+export async function createUserProfile(payload: {
+  name: string;
+  avatarId: string;
+  isKids?: boolean;
+  pin?: string | null;
+}): Promise<{ profile: UserSubProfile; user: UserAccount }> {
+  const token = getUserToken();
+  if (!token) throw new Error('Faça login na sua conta para criar um perfil.');
+
+  try {
+    const res = await apiFetch('/api/user/profiles', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Erro ao criar perfil.');
+    }
+    return data;
+  } catch (err) {
+    if (err instanceof Error && !err.message.toLowerCase().includes('fetch')) {
+      throw err;
+    }
+    const db = getLocalFallbackDb();
+    const userId = token.replace('local-token:', '');
+    const user = db.users.find((u) => u.id === userId) || db.users[0];
+    if (!user) throw new Error('Conta não encontrada.');
+    const currentProfiles = ensureClientUserProfiles(user);
+    if (currentProfiles.length >= 5) {
+      throw new Error('Limite máximo de 5 perfis por conta atingido.');
+    }
+    const newProfile: UserSubProfile = {
+      id: `prf-${Date.now()}`,
+      name: payload.name.trim().slice(0, 22),
+      avatarId: payload.avatarId || 'cyber-wolf',
+      isKids: Boolean(payload.isKids),
+      pin: payload.pin && /^\d{4}$/.test(payload.pin.trim()) ? payload.pin.trim() : null,
+      favorites: [],
+      history: [],
+      createdAt: Date.now(),
+    };
+    user.profiles = [...currentProfiles, newProfile];
+    saveLocalFallbackDb(db);
+    return { profile: newProfile, user };
+  }
+}
+
+export async function updateUserProfile(
+  profileId: string,
+  payload: {
+    name?: string;
+    avatarId?: string;
+    isKids?: boolean;
+    pin?: string | null;
+  }
+): Promise<{ profile: UserSubProfile; user: UserAccount }> {
+  const token = getUserToken();
+  if (!token) throw new Error('Sem sessão ativa.');
+
+  try {
+    const res = await apiFetch(`/api/user/profiles/${profileId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Erro ao atualizar perfil.');
+    }
+    return data;
+  } catch (err) {
+    if (err instanceof Error && !err.message.toLowerCase().includes('fetch')) {
+      throw err;
+    }
+    const db = getLocalFallbackDb();
+    const userId = token.replace('local-token:', '');
+    const user = db.users.find((u) => u.id === userId) || db.users[0];
+    if (!user) throw new Error('Conta não encontrada.');
+    const currentProfiles = ensureClientUserProfiles(user);
+    const target = currentProfiles.find((p) => p.id === profileId);
+    if (!target) throw new Error('Perfil não encontrado.');
+    if (payload.name !== undefined && payload.name.trim()) {
+      target.name = payload.name.trim().slice(0, 22);
+    }
+    if (payload.avatarId !== undefined) target.avatarId = payload.avatarId;
+    if (payload.isKids !== undefined) target.isKids = Boolean(payload.isKids);
+    if (payload.pin !== undefined) {
+      target.pin = payload.pin && /^\d{4}$/.test(payload.pin.trim()) ? payload.pin.trim() : null;
+    }
+    user.profiles = currentProfiles;
+    saveLocalFallbackDb(db);
+    return { profile: target, user };
+  }
+}
+
+export async function deleteUserProfile(profileId: string): Promise<UserAccount> {
+  const token = getUserToken();
+  if (!token) throw new Error('Sem sessão ativa.');
+
+  try {
+    const res = await apiFetch(`/api/user/profiles/${profileId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Erro ao excluir perfil.');
+    }
+    return data.user;
+  } catch (err) {
+    if (err instanceof Error && !err.message.toLowerCase().includes('fetch')) {
+      throw err;
+    }
+    const db = getLocalFallbackDb();
+    const userId = token.replace('local-token:', '');
+    const user = db.users.find((u) => u.id === userId) || db.users[0];
+    if (!user) throw new Error('Conta não encontrada.');
+    const currentProfiles = ensureClientUserProfiles(user);
+    if (currentProfiles.length <= 1) {
+      throw new Error('A conta precisa ter pelo menos 1 perfil ativo.');
+    }
+    user.profiles = currentProfiles.filter((p) => p.id !== profileId);
+    saveLocalFallbackDb(db);
+    return user;
+  }
+}
+
+export async function syncUserProfileState(
+  profileId: string,
+  payload: { favorites?: string[]; history?: WatchHistoryItem[] }
+): Promise<void> {
+  const token = getUserToken();
+  if (!token || !profileId) return;
+
+  try {
+    await apiFetch(`/api/user/profiles/${profileId}/state`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Fallback local
+    const db = getLocalFallbackDb();
+    const userId = token.replace('local-token:', '');
+    const user = db.users.find((u) => u.id === userId) || db.users[0];
+    if (user) {
+      const currentProfiles = ensureClientUserProfiles(user);
+      const target = currentProfiles.find((p) => p.id === profileId);
+      if (target) {
+        if (payload.favorites) target.favorites = payload.favorites.slice(0, 500);
+        if (payload.history) target.history = payload.history.slice(0, 50);
+        user.profiles = currentProfiles;
+        saveLocalFallbackDb(db);
+      }
+    }
   }
 }

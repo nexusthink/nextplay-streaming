@@ -126,12 +126,46 @@ export function saveDb(dbData) {
   }
 }
 
+export function ensureUserProfiles(user) {
+  if (!user) return [];
+  if (!Array.isArray(user.profiles) || user.profiles.length === 0) {
+    const firstName = String(user.name || 'Principal')
+      .trim()
+      .split(/\s+/)[0]
+      .slice(0, 18);
+    user.profiles = [
+      {
+        id: `prf-${user.id || Date.now()}-1`,
+        name: firstName || 'Principal',
+        avatarId: 'cyber-wolf',
+        isKids: false,
+        pin: null,
+        favorites: [],
+        history: [],
+        createdAt: Date.now(),
+      },
+    ];
+  }
+  return user.profiles.slice(0, 5);
+}
+
 export function sanitizeUserForClient(user, servers = []) {
   if (!user) return null;
   let linkedServer = null;
   if (user.iptvLink && user.iptvLink.serverId) {
     linkedServer = servers.find((s) => s.id === user.iptvLink.serverId) || null;
   }
+
+  const profiles = ensureUserProfiles(user).map((p) => ({
+    id: p.id,
+    name: p.name,
+    avatarId: p.avatarId || 'cyber-wolf',
+    isKids: Boolean(p.isKids),
+    pin: p.pin ? String(p.pin) : null,
+    favorites: Array.isArray(p.favorites) ? p.favorites : [],
+    history: Array.isArray(p.history) ? p.history.slice(0, 50) : [],
+    createdAt: p.createdAt || Date.now(),
+  }));
 
   return {
     id: user.id,
@@ -142,6 +176,7 @@ export function sanitizeUserForClient(user, servers = []) {
     status: user.status || 'active',
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
+    profiles,
     iptvLink:
       user.iptvLink && user.iptvLink.serverId && user.iptvLink.username
         ? {

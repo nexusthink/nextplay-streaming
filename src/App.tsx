@@ -31,6 +31,7 @@ import {
   SlidersHorizontal,
   Shield,
   Link2,
+  Users,
 } from 'lucide-react';
 import {
   ChannelItem,
@@ -42,6 +43,7 @@ import {
   SeriesDetails,
   SeriesEpisode,
   UserAccount,
+  UserSubProfile,
   PublicServerOption,
   PublicAppConfig,
 } from './types/iptv';
@@ -53,6 +55,9 @@ import {
   fetchXtreamSeriesInfo,
 } from './services/xtreamService';
 import {
+  createUserProfile,
+  deleteUserProfile,
+  ensureClientUserProfiles,
   fetchCurrentSession,
   fetchPublicConfig,
   getUserToken,
@@ -61,7 +66,9 @@ import {
   loginWithGoogle,
   registerAccount,
   setUserToken,
+  syncUserProfileState,
   unlinkIptvFromAccount,
+  updateUserProfile,
 } from './services/authService';
 import {
   findAlternateAudioVariant,
@@ -83,6 +90,7 @@ import { isAdultContent, getParentalPin, setParentalPin } from './services/conte
 import { ParentalPinModal } from './components/ParentalPinModal';
 import { MediaDetailsModal } from './components/MediaDetailsModal';
 import { GlobalOmniSearchModal } from './components/GlobalOmniSearchModal';
+import { ProfileGateScreen, ProfileAvatarBadge } from './components/ProfileGateScreen';
 import { LayoutGrid, List, Lock, MessageCircle, Minimize2, Maximize2 } from 'lucide-react';
 
 declare global {
@@ -130,6 +138,8 @@ export const App: React.FC = () => {
 
   // Estado da Conta do Cliente (E-mail ou Google) e Lista de Servidores do Admin
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [activeUserProfile, setActiveUserProfile] = useState<UserSubProfile | null>(null);
+  const [isChoosingProfile, setIsChoosingProfile] = useState<boolean>(true);
   const [publicServers, setPublicServers] = useState<PublicServerOption[]>([]);
   const [appConfig, setAppConfig] = useState<PublicAppConfig>({
     appName: 'NextPlay',
@@ -304,14 +314,54 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Persiste favoritos e perfis
+  // Persiste favoritos e histórico individualmente por Perfil Estilo Netflix (Local + Servidor)
+  const userSubProfiles = useMemo(
+    () => ensureClientUserProfiles(currentUser),
+    [currentUser]
+  );
+
+  const syncTimerRef = React.useRef<any>(null);
+
   useEffect(() => {
+    const profileKey = activeUserProfile?.id || 'default';
+    const favArray = Array.from(favorites);
     try {
-      localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(Array.from(favorites)));
+      localStorage.setItem(`${STORAGE_KEYS.FAVORITES}_${profileKey}`, JSON.stringify(favArray));
+      localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(favArray));
     } catch {
       // ignore
     }
-  }, [favorites]);
+
+    if (activeUserProfile) {
+      setCurrentUser((prev) => {
+        if (!prev || !Array.isArray(prev.profiles)) return prev;
+        return {
+          ...prev,
+          profiles: prev.profiles.map((p) =>
+            p.id === activeUserProfile.id ? { ...p, favorites: favArray, history } : p
+          ),
+        };
+      });
+
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(() => {
+        syncUserProfileState(activeUserProfile.id, {
+          favorites: favArray,
+          history,
+        });
+      }, 900);
+    }
+  }, [favorites, history, activeUserProfile]);
+
+  useEffect(() => {
+    const profileKey = activeUserProfile?.id || 'default';
+    try {
+      localStorage.setItem(`${STORAGE_KEYS.HISTORY}_${profileKey}`, JSON.stringify(history));
+      localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
+    } catch {
+      // ignore
+    }
+  }, [history, activeUserProfile]);
 
   useEffect(() => {
     try {
@@ -650,10 +700,11 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Categorias dinâmicas extraídas dos canais carregados
+  // Categorias dinâmicas extraídas dos canais carregados (respeitando Perfil Kids)
   const categories = useMemo<CategoryItem[]>(() => {
     const counts = new Map<string, number>();
     for (const ch of channels) {
+      if (activeUserProfile?.isKids && isAdultContent(ch)) continue;
       if (selectedMediaType !== 'all' && ch.mediaType !== selectedMediaType) continue;
       counts.set(ch.group, (counts.get(ch.group) || 0) + 1);
     }
@@ -662,16 +713,20 @@ export const App: React.FC = () => {
       name,
       count,
     }));
-  }, [channels, selectedMediaType]);
+  }, [channels, selectedMediaType, activeUserProfile]);
 
   // Canais filtrados com alta performance (useMemo)
   const filteredChannels = useMemo<ChannelItem[]>(() => {
-    let baseList = channels;
+    let baseList = activeUserProfile?.isKids
+      ? channels.filter((c) => !isAdultContent(c))
+      : channels;
 
     if (selectedNav === 'favorites') {
-      baseList = channels.filter((c) => favorites.has(c.id));
+      baseList = baseList.filter((c) => favorites.has(c.id));
     } else if (selectedNav === 'history') {
-      baseList = history.map((h) => h.channel);
+      baseList = history
+        .map((h) => h.channel)
+        .filter((c) => !(activeUserProfile?.isKids && isAdultContent(c)));
     }
 
     if (selectedMediaType !== 'all') {
@@ -708,6 +763,7 @@ export const App: React.FC = () => {
     selectedCategory,
     languageFilter,
     searchQuery,
+    activeUserProfile,
   ]);
 
   // Detecta automaticamente se o filme/série/canal atual possui versão alternativa Dublada <-> Legendada [Leg] na lista
@@ -981,6 +1037,7 @@ export const App: React.FC = () => {
       setSelectedNav('all');
       setUseProxyBuffer(true);
       setActiveChannel(null);
+      setIsChoosingProfile(true);
       setIsAuthenticated(true);
     } catch (err) {
       setAutoConnectError(
@@ -1122,6 +1179,7 @@ export const App: React.FC = () => {
     setSelectedNav('all');
     setUseProxyBuffer(true);
     setActiveChannel(null);
+    setIsChoosingProfile(true);
     setIsAuthenticated(true);
   };
 
@@ -1135,9 +1193,138 @@ export const App: React.FC = () => {
   const handleLogoutAccount = () => {
     setUserToken(null);
     setCurrentUser(null);
+    setActiveUserProfile(null);
+    setIsChoosingProfile(true);
     setAutoConnectError(null);
     setIsAuthenticated(false);
     setActiveChannel(null);
+  };
+
+  // ==========================================================================
+  // HANDLERS DE PERFIS ESTILO NETFLIX (ATÉ 5 PERFIS COM AVATARES E HISTÓRICO)
+  // ==========================================================================
+  const handleSelectNetflixProfile = useCallback((profile: UserSubProfile) => {
+    setActiveUserProfile(profile);
+    setIsChoosingProfile(false);
+    setActiveChannel(null);
+    setSelectedNav('all');
+    setSelectedCategory('ALL');
+
+    // Carrega Favoritos isolados deste Perfil
+    try {
+      const localFavRaw = localStorage.getItem(`${STORAGE_KEYS.FAVORITES}_${profile.id}`);
+      if (localFavRaw) {
+        const parsedFav = JSON.parse(localFavRaw);
+        if (Array.isArray(parsedFav)) {
+          setFavorites(new Set(parsedFav));
+        } else {
+          setFavorites(new Set(profile.favorites || []));
+        }
+      } else {
+        setFavorites(new Set(profile.favorites || []));
+      }
+    } catch {
+      setFavorites(new Set(profile.favorites || []));
+    }
+
+    // Carrega Histórico ("Continuar Assistindo") isolado deste Perfil
+    try {
+      const localHistRaw = localStorage.getItem(`${STORAGE_KEYS.HISTORY}_${profile.id}`);
+      if (localHistRaw) {
+        const parsedHist = JSON.parse(localHistRaw);
+        if (Array.isArray(parsedHist) && parsedHist.length > 0) {
+          setHistory(
+            parsedHist.filter((item: WatchHistoryItem) => !isAdultContent(item.channel))
+          );
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    setHistory(
+      Array.isArray(profile.history)
+        ? profile.history.filter((item) => !isAdultContent(item.channel))
+        : []
+    );
+  }, []);
+
+  const handleCreateNetflixProfile = async (payload: {
+    name: string;
+    avatarId: string;
+    isKids: boolean;
+    pin: string | null;
+  }) => {
+    if (!currentUser) {
+      // Modo Demonstração (sem conta logada)
+      const newPrf: UserSubProfile = {
+        id: `prf-demo-${Date.now()}`,
+        name: payload.name,
+        avatarId: payload.avatarId,
+        isKids: payload.isKids,
+        pin: payload.pin,
+        favorites: [],
+        history: [],
+        createdAt: Date.now(),
+      };
+      setActiveUserProfile(newPrf);
+      return;
+    }
+    const { user } = await createUserProfile(payload);
+    setCurrentUser(user);
+  };
+
+  const handleUpdateNetflixProfile = async (
+    profileId: string,
+    payload: {
+      name: string;
+      avatarId: string;
+      isKids: boolean;
+      pin: string | null;
+    }
+  ) => {
+    const { profile, user } = await updateUserProfile(profileId, payload);
+    setCurrentUser(user);
+    if (activeUserProfile?.id === profileId) {
+      setActiveUserProfile(profile);
+    }
+  };
+
+  const handleDeleteNetflixProfile = async (profileId: string) => {
+    const user = await deleteUserProfile(profileId);
+    setCurrentUser(user);
+    try {
+      localStorage.removeItem(`${STORAGE_KEYS.FAVORITES}_${profileId}`);
+      localStorage.removeItem(`${STORAGE_KEYS.HISTORY}_${profileId}`);
+    } catch {
+      // ignore
+    }
+    if (activeUserProfile?.id === profileId) {
+      const remaining = ensureClientUserProfiles(user);
+      setActiveUserProfile(remaining[0] || null);
+    }
+  };
+
+  const handleClearNetflixProfileHistory = async (profileId: string) => {
+    try {
+      localStorage.removeItem(`${STORAGE_KEYS.HISTORY}_${profileId}`);
+    } catch {
+      // ignore
+    }
+    await syncUserProfileState(profileId, { history: [] });
+    if (activeUserProfile?.id === profileId) {
+      setHistory([]);
+    }
+    setCurrentUser((prev) => {
+      if (!prev || !Array.isArray(prev.profiles)) return prev;
+      return {
+        ...prev,
+        profiles: prev.profiles.map((p) =>
+          p.id === profileId ? { ...p, history: [] } : p
+        ),
+      };
+    });
   };
 
   if (isAdminView) {
@@ -1208,8 +1395,21 @@ export const App: React.FC = () => {
             setChannels(DEMO_CHANNELS);
             setSelectedCategory('ALL');
             setActiveChannel(null);
+            setIsChoosingProfile(true);
             setIsAuthenticated(true);
           }}
+        />
+      ) : isChoosingProfile || !activeUserProfile ? (
+        <ProfileGateScreen
+          user={currentUser}
+          profiles={userSubProfiles}
+          activeProfileId={activeUserProfile?.id || null}
+          onSelectProfile={handleSelectNetflixProfile}
+          onCreateProfile={handleCreateNetflixProfile}
+          onUpdateProfile={handleUpdateNetflixProfile}
+          onDeleteProfile={handleDeleteNetflixProfile}
+          onClearProfileHistory={handleClearNetflixProfileHistory}
+          onLogoutAccount={handleLogoutAccount}
         />
       ) : (
         <div className="flex flex-col h-screen w-screen bg-[#090d11] text-slate-100 overflow-hidden select-none">
@@ -1369,35 +1569,108 @@ export const App: React.FC = () => {
                 <Settings className="w-4 h-4" />
               </button>
 
-              {/* Dropdown da Conta do Usuário & Lista Vinculada */}
+              {/* Dropdown do Perfil Ativo (Estilo Netflix) & Conta */}
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                  className="flex items-center gap-2 p-1 pl-1.5 pr-2 rounded-full hover:bg-white/10 transition border border-transparent hover:border-slate-700 cursor-pointer"
+                  className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full hover:bg-white/10 transition border border-transparent hover:border-slate-700 cursor-pointer"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-xs font-black text-white shadow-md">
-                    {currentUser?.name
-                      ? currentUser.name.trim().charAt(0).toUpperCase()
-                      : activeProfile?.name
-                      ? activeProfile.name.trim().charAt(0).toUpperCase()
-                      : 'U'}
-                  </div>
-                  <span className="hidden sm:inline text-xs font-semibold text-slate-200 max-w-[110px] truncate">
-                    {currentUser?.name || activeProfile?.name || 'Visitante'}
+                  <ProfileAvatarBadge
+                    avatarId={activeUserProfile?.avatarId}
+                    size="sm"
+                    className="shadow-md"
+                  />
+                  <span className="hidden sm:inline text-xs font-bold text-slate-100 max-w-[110px] truncate">
+                    {activeUserProfile?.name || currentUser?.name || 'Perfil'}
                   </span>
+                  {activeUserProfile?.isKids && (
+                    <span className="px-1.5 py-0.5 rounded bg-sky-400 text-slate-950 font-black text-[9px] uppercase">
+                      KIDS
+                    </span>
+                  )}
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                 </button>
 
                 {/* Menu Dropdown Flutuante */}
                 {isProfileMenuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#0a1017]/95 backdrop-blur-2xl border border-slate-800 shadow-2xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2"
+                    className="absolute right-0 mt-2 w-72 rounded-2xl bg-[#0a1017]/95 backdrop-blur-2xl border border-slate-800 shadow-2xl p-2 z-50 text-xs animate-in fade-in slide-in-from-top-2"
                     onMouseLeave={() => setIsProfileMenuOpen(false)}
                   >
-                    <div className="px-3 py-2.5 border-b border-slate-800 mb-1">
+                    {/* Seção de Troca Rápida de Perfis Estilo Netflix */}
+                    <div className="px-2 py-2 border-b border-slate-800 mb-1">
+                      <div className="flex items-center justify-between px-1 mb-2">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                          Perfis ({userSubProfiles.length}/5)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileMenuOpen(false);
+                            setIsChoosingProfile(true);
+                          }}
+                          className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 cursor-pointer"
+                        >
+                          Gerenciar
+                        </button>
+                      </div>
+
+                      <div className="space-y-1">
+                        {userSubProfiles.map((prf) => {
+                          const isCurrent = prf.id === activeUserProfile?.id;
+                          return (
+                            <button
+                              key={prf.id}
+                              type="button"
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                if (prf.pin && prf.id !== activeUserProfile?.id) {
+                                  setIsChoosingProfile(true);
+                                } else {
+                                  handleSelectNetflixProfile(prf);
+                                }
+                              }}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-xl transition cursor-pointer ${
+                                isCurrent
+                                  ? 'bg-cyan-500/15 border border-cyan-500/30 text-white'
+                                  : 'hover:bg-white/5 text-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <ProfileAvatarBadge avatarId={prf.avatarId} size="sm" />
+                                <span className="font-bold truncate">{prf.name}</span>
+                                {prf.isKids && (
+                                  <span className="px-1.5 py-0.5 rounded bg-sky-400/20 text-sky-300 font-black text-[9px]">
+                                    KIDS
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {prf.pin && <Lock className="w-3 h-3 text-amber-400" />}
+                                {isCurrent && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          setIsChoosingProfile(true);
+                        }}
+                        className="mt-2 w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-cyan-300 font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>Quem está assistindo? (Perfis)</span>
+                      </button>
+                    </div>
+
+                    <div className="px-3 py-2 border-b border-slate-800 mb-1">
                       <p className="text-[10px] uppercase font-bold text-slate-500">
-                        {currentUser ? 'Conta Conectada' : 'Modo Demonstração'}
+                        {currentUser ? 'Conta Principal' : 'Modo Demonstração'}
                       </p>
                       <p className="font-bold text-white truncate mt-0.5">
                         {currentUser?.name || activeProfile?.name || 'NextPlay User'}
