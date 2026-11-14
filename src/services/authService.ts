@@ -412,12 +412,67 @@ export async function loginAccount(
   }
 }
 
+// Pareamento Inteligente de TV & APK (QR Code / Código de 6 dígitos)
+export async function requestTvAuthCode(): Promise<{ code: string; expiresIn: number }> {
+  const res = await apiFetch('/api/auth/tv-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const data = await res.json();
+  if (!res.ok || !data?.code) {
+    throw new Error('Não foi possível gerar o código de pareamento.');
+  }
+  return data;
+}
+
+export async function pollTvAuthCode(code: string): Promise<{
+  status: 'pending' | 'approved' | 'expired';
+  token?: string;
+  user?: UserAccount;
+}> {
+  const res = await apiFetch(`/api/auth/tv-poll/${encodeURIComponent(code)}`);
+  if (res.status === 404) {
+    return { status: 'expired' };
+  }
+  const data = await res.json().catch(() => ({ status: 'pending' }));
+  if (data.status === 'approved' && data.token && data.user) {
+    setUserToken(data.token);
+    if (data.user.email) {
+      saveGoogleAccountLocally({
+        email: data.user.email,
+        name: data.user.name || data.user.email.split('@')[0],
+        avatarUrl: data.user.avatarUrl,
+      });
+    }
+  }
+  return data;
+}
+
+export async function approveTvAuthCode(code: string): Promise<boolean> {
+  const token = getUserToken();
+  if (!token) return false;
+  try {
+    const res = await apiFetch('/api/auth/tv-approve', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ code }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function loginWithGoogle(payload: {
   email?: string;
   name?: string;
   avatarUrl?: string;
   credential?: string;
   accessToken?: string;
+  tvCode?: string;
 }): Promise<{ token: string; user: UserAccount }> {
   try {
     const res = await apiFetch('/api/auth/google', {

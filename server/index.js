@@ -371,10 +371,88 @@ app.post('/api/auth/login', (req, res) => {
   saveDb(db);
 
   const token = createToken({ role: 'user', userId: user.id, email: user.email });
+  const sanitizedUser = sanitizeUserForClient(user, db.servers);
+
+  // Se o login veio de um pareamento de TV/App (tvCode), já autoriza a sessão da TV automaticamente
+  const tvCode = String(req.body?.tvCode || '').trim();
+  if (tvCode && tvAuthSessions.has(tvCode)) {
+    tvAuthSessions.set(tvCode, {
+      status: 'approved',
+      token,
+      user: sanitizedUser,
+      createdAt: Date.now(),
+    });
+  }
+
   return res.json({
     token,
-    user: sanitizeUserForClient(user, db.servers),
+    user: sanitizedUser,
   });
+});
+
+// ============================================================================
+// PAREAMENTO INTELIGENTE DE TV & APK ANDROID (QR CODE / CÓDIGO DE 6 DÍGITOS)
+// ============================================================================
+const tvAuthSessions = new Map();
+
+// Limpa códigos expirados (> 15 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of tvAuthSessions.entries()) {
+    if (now - v.createdAt > 15 * 60 * 1000) {
+      tvAuthSessions.delete(k);
+    }
+  }
+}, 60 * 1000);
+
+// 1. TV ou App solicita um código de 6 dígitos para pareamento Google
+app.post('/api/auth/tv-code', (_req, res) => {
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  tvAuthSessions.set(code, {
+    status: 'pending',
+    token: null,
+    user: null,
+    createdAt: Date.now(),
+  });
+  return res.json({
+    code,
+    expiresIn: 900,
+  });
+});
+
+// 2. TV ou App consulta se o código já foi autenticado no celular/navegador
+app.get('/api/auth/tv-poll/:code', (req, res) => {
+  const code = String(req.params.code || '').trim();
+  const session = tvAuthSessions.get(code);
+  if (!session) {
+    return res.status(404).json({ status: 'expired' });
+  }
+  if (session.status === 'approved' && session.token && session.user) {
+    tvAuthSessions.delete(code);
+    return res.json({
+      status: 'approved',
+      token: session.token,
+      user: session.user,
+    });
+  }
+  return res.json({ status: 'pending' });
+});
+
+// 3. Celular/Navegador autenticado aprova imediatamente um código da TV
+app.post('/api/auth/tv-approve', requireUserAuth, (req, res) => {
+  const code = String(req.body?.code || '').trim();
+  if (!code || !tvAuthSessions.has(code)) {
+    return res.status(404).json({ error: 'Código da TV inválido ou expirado.' });
+  }
+  const token = createToken({ role: 'user', userId: req.user.id, email: req.user.email });
+  const sanitizedUser = sanitizeUserForClient(req.user, db.servers);
+  tvAuthSessions.set(code, {
+    status: 'approved',
+    token,
+    user: sanitizedUser,
+    createdAt: Date.now(),
+  });
+  return res.json({ ok: true, user: sanitizedUser });
 });
 
 // Login / Cadastro com Conta Google Oficial (Valida accessToken ou JWT diretamente na API do Google)
@@ -448,9 +526,22 @@ app.post('/api/auth/google', async (req, res) => {
   saveDb(db);
 
   const token = createToken({ role: 'user', userId: user.id, email: user.email });
+  const sanitizedUser = sanitizeUserForClient(user, db.servers);
+
+  // Se o login veio de um pareamento de TV/App (tvCode), já autoriza a sessão da TV automaticamente
+  const tvCode = String(req.body?.tvCode || '').trim();
+  if (tvCode && tvAuthSessions.has(tvCode)) {
+    tvAuthSessions.set(tvCode, {
+      status: 'approved',
+      token,
+      user: sanitizedUser,
+      createdAt: Date.now(),
+    });
+  }
+
   return res.json({
     token,
-    user: sanitizeUserForClient(user, db.servers),
+    user: sanitizedUser,
   });
 });
 

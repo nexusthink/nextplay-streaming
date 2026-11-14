@@ -15,7 +15,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Mantém a tela ligada durante reprodução de Canais Ao Vivo, Filmes e Séries (Celular, Tablet e Android TV)
+        // Mantém a tela ligada durante reprodução de Canais Ao Vivo, Filmes e Séries
+        // (Celular, Tablet e Android TV)
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         if (getBridge() != null && getBridge().getWebView() != null) {
@@ -23,15 +24,18 @@ public class MainActivity extends BridgeActivity {
             webView.setFocusable(true);
             webView.setFocusableInTouchMode(true);
 
-            // Identifica nativamente no Android se o aparelho é uma Smart TV / TV Box ou Celular / Tablet
+            // Identifica nativamente no Android se o aparelho é uma Smart TV / TV Box ou
+            // Celular / Tablet
             boolean isTelevision = false;
             try {
                 UiModeManager uiModeManager = (UiModeManager) getSystemService(Context.UI_MODE_SERVICE);
-                if (uiModeManager != null && uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
+                if (uiModeManager != null
+                        && uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
                     isTelevision = true;
                 }
                 PackageManager pm = getPackageManager();
-                if (pm != null && (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK) || pm.hasSystemFeature("android.hardware.type.television"))) {
+                if (pm != null && (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                        || pm.hasSystemFeature("android.hardware.type.television"))) {
                     isTelevision = true;
                 }
             } catch (Exception ignored) {
@@ -48,14 +52,16 @@ public class MainActivity extends BridgeActivity {
             settings.setUseWideViewPort(true);
             settings.setLoadWithOverviewMode(true);
 
-            // Remove marcador "; wv" do WebView para permitir login oficial Google OAuth (accounts.google.com)
-            // e anexa o identificador de plataforma (NextPlayApp/TV ou NextPlayApp/Android) para o Switch Inteligente de Auth ID
+            // Remove marcador "; wv" do WebView para permitir login oficial Google OAuth
+            // (accounts.google.com)
+            // e anexa o identificador de plataforma (NextPlayApp/TV ou NextPlayApp/Android)
+            // para o Switch Inteligente de Auth ID
             String defaultUa = settings.getUserAgentString();
             if (defaultUa != null) {
                 String cleanChromeUa = defaultUa
-                    .replace("; wv)", ")")
-                    .replace("; wv", "")
-                    .replace("Version/4.0 ", "");
+                        .replace("; wv)", ")")
+                        .replace("; wv", "")
+                        .replace("Version/4.0 ", "");
                 settings.setUserAgentString(cleanChromeUa + " " + platformTag);
             }
         }
@@ -66,15 +72,14 @@ public class MainActivity extends BridgeActivity {
         if (getBridge() != null && getBridge().getWebView() != null) {
             WebView webView = getBridge().getWebView();
             webView.evaluateJavascript(
-                "(function() {" +
-                "  var backBtn = document.querySelector('[data-tv-back=\"true\"]');" +
-                "  if (backBtn) { backBtn.click(); return 'handled'; }" +
-                "  var evt = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });" +
-                "  window.dispatchEvent(evt);" +
-                "  return 'dispatched';" +
-                "})()",
-                null
-            );
+                    "(function() {" +
+                            "  var backBtn = document.querySelector('[data-tv-back=\"true\"]');" +
+                            "  if (backBtn) { backBtn.click(); return 'handled'; }" +
+                            "  var evt = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });" +
+                            "  window.dispatchEvent(evt);" +
+                            "  return 'dispatched';" +
+                            "})()",
+                    null);
             return;
         }
         super.onBackPressed();

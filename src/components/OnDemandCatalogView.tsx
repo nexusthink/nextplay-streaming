@@ -993,10 +993,6 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
                 {/* Play Button Overlay */}
                 <div
                   className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectChannel(item);
-                  }}
                 >
                   <div className="w-12 h-12 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center shadow-neon-cyan transform group-hover:scale-110 transition-transform">
                     <Play className="w-6 h-6 fill-slate-950 ml-0.5" />

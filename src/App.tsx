@@ -524,6 +524,84 @@ export const App: React.FC = () => {
     [channels, handleSelectEpisode]
   );
 
+  // Abre a tela limpa de detalhes para Filmes e Séries (ou reproduz direto se for Canal ao Vivo)
+  const handleOpenMediaDetails = useCallback(
+    async (channel: ChannelItem) => {
+      if (channel.mediaType === 'live') {
+        handleSelectChannel(channel);
+        return;
+      }
+
+      setDetailItem(channel);
+      setSeriesError(null);
+
+      if (channel.mediaType === 'series' && channel.seriesId && channel.xtreamAuth) {
+        setIsLoadingSeries(true);
+        try {
+          const details = await fetchXtreamSeriesInfo(
+            channel.xtreamAuth.serverUrl,
+            channel.xtreamAuth.username,
+            channel.xtreamAuth.password,
+            channel.seriesId,
+            channel.name
+          );
+          setActiveSeriesDetails(details);
+        } catch (err) {
+          setSeriesError(
+            err instanceof Error ? err.message : 'Erro ao carregar episódios desta série.'
+          );
+        } finally {
+          setIsLoadingSeries(false);
+        }
+      } else if (channel.mediaType === 'series' && !channel.seriesId) {
+        const targetSeriesName = channel.seriesName || channel.name;
+        const relatedEps = channels.filter(
+          (c) => c.mediaType === 'series' && (c.seriesName || c.name) === targetSeriesName
+        );
+        if (relatedEps.length > 0) {
+          const seasonsMap = new Map<number, SeriesEpisode[]>();
+          relatedEps.forEach((epItem, idx) => {
+            const sNum = epItem.seasonNumber || 1;
+            const eNum = epItem.episodeNumber || idx + 1;
+            const list = seasonsMap.get(sNum) || [];
+            list.push({
+              id: epItem.id,
+              episodeNum: eNum,
+              seasonNumber: sNum,
+              title: epItem.name,
+              url: epItem.url,
+              containerExtension: epItem.containerExtension || 'mp4',
+              plot: epItem.plot,
+              cover: epItem.logo,
+              rating: epItem.rating,
+            });
+            seasonsMap.set(sNum, list);
+          });
+
+          setActiveSeriesDetails({
+            seriesId: `m3u-series-${targetSeriesName}`,
+            name: targetSeriesName,
+            cover: channel.logo,
+            plot: channel.plot,
+            rating: channel.rating,
+            seasons: Array.from(seasonsMap.entries())
+              .sort((a, b) => a[0] - b[0])
+              .map(([seasonNumber, episodes]) => ({
+                seasonNumber,
+                name: `Temporada ${seasonNumber}`,
+                episodes: episodes.sort((a, b) => a.episodeNum - b.episodeNum),
+              })),
+          });
+        } else {
+          setActiveSeriesDetails(null);
+        }
+      } else {
+        setActiveSeriesDetails(null);
+      }
+    },
+    [channels, handleSelectChannel]
+  );
+
   // Salva o progresso exato de filmes e séries no histórico local "Continuar Assistindo"
   const handleProgressUpdate = useCallback(
     (channelId: string, progressSeconds: number, durationSeconds: number) => {
@@ -1900,197 +1978,99 @@ export const App: React.FC = () => {
 
           {/* Área Principal 100% Edge-to-Edge */}
           <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-            {/* O Player abre no topo (ou flutuante no canto) apenas quando o usuário escolhe um item */}
+            {/* Player Direto em Tela Cheia quando o usuário reproduz qualquer canal, filme ou episódio */}
             {activeChannel && (
-              isPlayerMinimized ? (
-                /* MODO MINI-PLAYER FLUTUANTE (Picture-in-Picture In-App) */
-                <div className="fixed bottom-6 right-6 w-72 sm:w-88 aspect-video rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.95)] border-2 border-cyan-400 z-50 bg-black animate-in slide-in-from-bottom-5">
-                  <div className="absolute top-2 right-2 z-40 flex items-center gap-1.5 bg-black/75 backdrop-blur-md px-2 py-1 rounded-xl border border-white/10">
-                    <button
-                      onClick={() => setIsPlayerMinimized(false)}
-                      title="Restaurar Player para a Tela Principal"
-                      className="p-1 text-cyan-400 hover:text-white transition"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setActiveChannel(null)}
-                      title="Fechar Transmissão"
-                      className="p-1 text-rose-400 hover:text-white transition"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <VideoPlayerEngine
-                    channel={activeChannel}
-                    playlistChannels={channels}
-                    alternateAudioChannel={alternateAudioChannel}
-                    onSelectChannel={handleSelectChannel}
-                    isFavorite={favorites.has(activeChannel.id)}
-                    onToggleFavorite={handleToggleFavorite}
-                    onPrevChannel={handlePrevChannel}
-                    onNextChannel={handleNextChannel}
-                    useProxyBuffer={useProxyBuffer}
-                    onToggleProxyBuffer={handleToggleProxyBuffer}
-                    showSpectrum={showSpectrum}
-                    onToggleSpectrum={handleToggleSpectrum}
-                    onClose={() => setActiveChannel(null)}
-                    initialProgressSeconds={history.find((h) => h.channel.id === activeChannel.id)?.progressSeconds}
-                    onProgressUpdate={handleProgressUpdate}
-                  />
-                </div>
-              ) : (
-                /* MODO NORMAL DO PLAYER NO TOPO */
-                <div className="w-full bg-black/95 p-2 sm:p-5 border-b border-slate-800/80 shrink-0">
-                  <div className="max-w-6xl mx-auto">
-                    <div className="flex items-center justify-between pb-2 px-1">
-                      <span className="text-xs font-bold text-cyan-300 flex items-center gap-2 truncate pr-2">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
-                        <span className="truncate">Reproduzindo: {activeChannel.name}</span>
-                      </span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setIsPlayerMinimized(true)}
-                          className="px-2.5 sm:px-3 py-1 rounded-xl bg-slate-800 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 text-xs font-semibold border border-slate-700/80 transition flex items-center gap-1.5"
-                          title="Minimizar para o Canto (PiP) e Navegar no Catálogo"
-                        >
-                          <Minimize2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Minimizar (PiP)</span>
-                        </button>
-                        <button
-                          onClick={() => setActiveChannel(null)}
-                          className="px-2.5 sm:px-3 py-1 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 text-xs font-semibold border border-slate-700/80 transition flex items-center gap-1.5"
-                          title="Fechar Player"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Fechar</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="w-full aspect-video max-h-[82vh] min-h-[190px] sm:min-h-[320px] rounded-2xl overflow-hidden bg-black shadow-2xl relative">
-                      <VideoPlayerEngine
-                        channel={activeChannel}
-                        playlistChannels={channels}
-                        alternateAudioChannel={alternateAudioChannel}
-                        onSelectChannel={handleSelectChannel}
-                        isFavorite={favorites.has(activeChannel.id)}
-                        onToggleFavorite={handleToggleFavorite}
-                        onPrevChannel={handlePrevChannel}
-                        onNextChannel={handleNextChannel}
-                        useProxyBuffer={useProxyBuffer}
-                        onToggleProxyBuffer={handleToggleProxyBuffer}
-                        showSpectrum={showSpectrum}
-                        onToggleSpectrum={handleToggleSpectrum}
-                        onClose={() => setActiveChannel(null)}
-                        initialProgressSeconds={history.find((h) => h.channel.id === activeChannel.id)?.progressSeconds}
-                        onProgressUpdate={handleProgressUpdate}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )
+              <VideoPlayerEngine
+                channel={activeChannel}
+                playlistChannels={channels}
+                alternateAudioChannel={alternateAudioChannel}
+                onSelectChannel={handleSelectChannel}
+                isFavorite={favorites.has(activeChannel.id)}
+                onToggleFavorite={handleToggleFavorite}
+                onPrevChannel={handlePrevChannel}
+                onNextChannel={handleNextChannel}
+                useProxyBuffer={useProxyBuffer}
+                onToggleProxyBuffer={handleToggleProxyBuffer}
+                showSpectrum={showSpectrum}
+                onToggleSpectrum={handleToggleSpectrum}
+                onClose={() => setActiveChannel(null)}
+                initialProgressSeconds={
+                  history.find((h) => h.channel.id === activeChannel.id)?.progressSeconds
+                }
+                onProgressUpdate={handleProgressUpdate}
+                seriesDetails={activeSeriesDetails}
+                onSelectEpisode={handleSelectEpisode}
+              />
             )}
 
-            {/* Seletor Interativo de Temporadas e Episódios (exibido automaticamente ao selecionar qualquer Série) */}
-              {(isLoadingSeries || seriesError || activeSeriesDetails) && (
-                <SeriesEpisodeSelector
-                  seriesDetails={activeSeriesDetails}
-                  isLoading={isLoadingSeries}
-                  error={seriesError}
-                  activeEpisodeId={activeChannel?.id}
-                  onSelectEpisode={handleSelectEpisode}
+            {selectedNav === 'history' && (
+              <HistoryManagerPanel history={history} onClear={handleClearHistory} />
+            )}
+
+            {/* Quando estiver na aba TV AO VIVO, exibe a Grade Inteligente Separada por Emissoras */}
+            {selectedMediaType === 'live' ? (
+              <div className="flex-1 min-h-0">
+                <LiveTvGuideView
+                  channels={channels.filter((c) => c.mediaType === 'live')}
+                  favorites={favorites}
+                  activeChannelId={activeChannel?.id}
+                  isParentalUnlocked={isParentalUnlocked}
+                  onRequestParentalUnlock={handleRequestParentalUnlock}
+                  onSelectChannel={handleSelectChannel}
+                  onToggleFavorite={handleToggleFavorite}
                 />
-              )}
-
-              {selectedNav === 'history' && (
-                <HistoryManagerPanel history={history} onClear={handleClearHistory} />
-              )}
-
-              {/* Quando estiver na aba TV AO VIVO, exibe a Grade Inteligente Separada por Emissoras */}
-              {selectedMediaType === 'live' ? (
-                <div className="flex-1 min-h-0">
-                  <LiveTvGuideView
-                    channels={channels.filter((c) => c.mediaType === 'live')}
+              </div>
+            ) : selectedMediaType === 'movie' ? (
+              /* Quando estiver na aba FILMES, exibe o Catálogo On Demand Vertical por Fornecedoras & Gêneros */
+              <div className="flex-1 min-h-0">
+                <OnDemandCatalogView
+                  mediaType="movie"
+                  channels={channels.filter((c) => c.mediaType === 'movie')}
+                  favorites={favorites}
+                  activeChannelId={activeChannel?.id}
+                  onSelectChannel={handleOpenMediaDetails}
+                  onOpenDetails={handleOpenMediaDetails}
+                  onToggleFavorite={handleToggleFavorite}
+                />
+              </div>
+            ) : selectedMediaType === 'series' ? (
+              /* Quando estiver na aba SÉRIES, exibe o Catálogo On Demand Vertical de Séries */
+              <div className="flex-1 min-h-0">
+                <OnDemandCatalogView
+                  mediaType="series"
+                  channels={channels.filter((c) => c.mediaType === 'series')}
+                  favorites={favorites}
+                  activeChannelId={activeChannel?.id}
+                  onSelectChannel={handleOpenMediaDetails}
+                  onOpenDetails={handleOpenMediaDetails}
+                  onToggleFavorite={handleToggleFavorite}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0">
+                {catalogLayout === 'netflix' ? (
+                  <NetflixCatalogView
+                    channels={filteredChannels}
+                    history={history}
                     favorites={favorites}
                     activeChannelId={activeChannel?.id}
-                    isParentalUnlocked={isParentalUnlocked}
-                    onRequestParentalUnlock={handleRequestParentalUnlock}
-                    onSelectChannel={handleSelectChannel}
+                    onSelectChannel={handleOpenMediaDetails}
                     onToggleFavorite={handleToggleFavorite}
+                    selectedMediaType={selectedMediaType}
                   />
-                </div>
-              ) : selectedMediaType === 'movie' ? (
-                /* Quando estiver na aba FILMES, exibe o Catálogo On Demand Vertical por Fornecedoras & Gêneros */
-                <div className="flex-1 min-h-0">
-                  <OnDemandCatalogView
-                    mediaType="movie"
-                    channels={channels.filter((c) => c.mediaType === 'movie')}
-                    favorites={favorites}
+                ) : (
+                  <VirtualChannelCatalog
+                    channels={filteredChannels}
                     activeChannelId={activeChannel?.id}
-                    onSelectChannel={handleSelectChannel}
-                    onOpenDetails={(item) => setDetailItem(item)}
-                    onToggleFavorite={handleToggleFavorite}
-                  />
-                </div>
-              ) : selectedMediaType === 'series' ? (
-                /* Quando estiver na aba SÉRIES, exibe o Catálogo On Demand Vertical de Séries */
-                <div className="flex-1 min-h-0">
-                  <OnDemandCatalogView
-                    mediaType="series"
-                    channels={channels.filter((c) => c.mediaType === 'series')}
+                    activeSeriesId={activeSeriesDetails?.seriesId || activeChannel?.seriesId}
                     favorites={favorites}
-                    activeChannelId={activeChannel?.id}
-                    onSelectChannel={handleSelectChannel}
-                    onOpenDetails={async (item) => {
-                      setDetailItem(item);
-                      if (item.seriesId && item.xtreamAuth) {
-                        setIsLoadingSeries(true);
-                        try {
-                          const details = await fetchXtreamSeriesInfo(
-                            item.xtreamAuth.serverUrl,
-                            item.xtreamAuth.username,
-                            item.xtreamAuth.password,
-                            item.seriesId,
-                            item.name
-                          );
-                          setActiveSeriesDetails(details);
-                        } catch {
-                          // ignore
-                        } finally {
-                          setIsLoadingSeries(false);
-                        }
-                      }
-                    }}
+                    onSelectChannel={handleOpenMediaDetails}
                     onToggleFavorite={handleToggleFavorite}
                   />
-                </div>
-              ) : (
-                <div className="flex-1 min-h-0">
-                  {catalogLayout === 'netflix' ? (
-                    <NetflixCatalogView
-                      channels={filteredChannels}
-                      history={history}
-                      favorites={favorites}
-                      activeChannelId={activeChannel?.id}
-                      onSelectChannel={handleSelectChannel}
-                      onToggleFavorite={handleToggleFavorite}
-                      selectedMediaType={selectedMediaType}
-                    />
-                  ) : (
-                    <VirtualChannelCatalog
-                      channels={filteredChannels}
-                      activeChannelId={activeChannel?.id}
-                      activeSeriesId={activeSeriesDetails?.seriesId || activeChannel?.seriesId}
-                      favorites={favorites}
-                      onSelectChannel={handleSelectChannel}
-                      onToggleFavorite={handleToggleFavorite}
-                    />
-                  )}
-                </div>
-              )}
-            </main>
+                )}
+              </div>
+            )}
+          </main>
 
           {/* Modal de Vínculo de Servidor e Login IPTV da Conta */}
           <ConnectionModal

@@ -28,6 +28,9 @@ import {
   getSavedGoogleAccounts,
   isRunningInNativeApp,
   resolvePlatformGoogleClientId,
+  requestTvAuthCode,
+  pollTvAuthCode,
+  approveTvAuthCode,
 } from '../services/authService';
 
 declare global {
@@ -72,6 +75,7 @@ interface AuthPortalScreenProps {
     avatarUrl?: string;
     credential?: string;
     accessToken?: string;
+    tvCode?: string;
   }) => Promise<void>;
   onLinkIptvAndConnect: (
     serverId: string,
@@ -115,10 +119,20 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
   const [accountPassword, setAccountPassword] = useState('');
   const [showAccountPass, setShowAccountPass] = useState(false);
 
-  // Modal de Login com Google
+  // Modal de Login com Google & Pareamento de Smart TV
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [googleEmail, setGoogleEmail] = useState('');
   const [googleName, setGoogleName] = useState('');
+  const [tvPairingCode, setTvPairingCode] = useState<string | null>(null);
+  const [urlTvCode] = useState<string | null>(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      return q.get('tv') || q.get('tv_code') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [tvApprovedSuccess, setTvApprovedSuccess] = useState(false);
 
   // Estado Etapa 2: Seleção do Servidor (definido pelo Admin) + Usuário e Senha IPTV
   const [selectedServerId, setSelectedServerId] = useState<string>('');
@@ -139,6 +153,12 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     platform: detectedPlatform,
     platformLabel,
   } = resolvePlatformGoogleClientId(appConfig);
+  const webOAuthClientId = (
+    appConfig.googleClientIdWeb ||
+    appConfig.googleClientId ||
+    activeGoogleClientId ||
+    ''
+  ).trim();
 
   // Pré-seleciona o servidor padrão definido pelo Admin ou o já vinculado ao usuário
   useEffect(() => {
@@ -154,57 +174,51 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     }
   }, [servers, currentUser, selectedServerId]);
 
-  // Efeito de Ondas Sonoras Cyberpunk Interativas no Fundo
+  // Se o usuário escaneou o QR Code da TV no celular e já está logado (ou acabou de logar), aprova a TV automaticamente
   useEffect(() => {
-    const canvas = bgCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (urlTvCode && currentUser && !tvApprovedSuccess) {
+      approveTvAuthCode(urlTvCode).then((ok) => {
+        if (ok) setTvApprovedSuccess(true);
+      });
+    }
+  }, [urlTvCode, currentUser, tvApprovedSuccess]);
 
-    let raf = 0;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const resize = () => {
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-    };
-    resize();
-    window.addEventListener('resize', resize);
+  // Quando o Modal Google abre na Smart TV ou App Android, gera um código de pareamento e faz polling automático
+  useEffect(() => {
+    if (!isGoogleModalOpen) return;
+    let active = true;
+    let pollTimer: number | null = null;
 
-    const draw = (t: number) => {
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
+    requestTvAuthCode()
+      .then((data) => {
+        if (!active) return;
+        setTvPairingCode(data.code);
+        pollTimer = window.setInterval(async () => {
+          try {
+            const statusRes = await pollTvAuthCode(data.code);
+            if (statusRes.status === 'approved' && statusRes.user) {
+              if (pollTimer) window.clearInterval(pollTimer);
+              setIsGoogleModalOpen(false);
+              await onLoginGoogle({
+                email: statusRes.user.email,
+                name: statusRes.user.name,
+                avatarUrl: statusRes.user.avatarUrl || undefined,
+              });
+            }
+          } catch {
+            // ignore polling glitches
+          }
+        }, 2500);
+      })
+      .catch(() => {
+        // fallback silencioso se offline
+      });
 
-      const lines = [
-        { color: 'rgba(0, 242, 254, 0.16)', amp: 24 * dpr, freq: 0.003, speed: 0.002 },
-        { color: 'rgba(16, 185, 129, 0.12)', amp: 18 * dpr, freq: 0.0045, speed: -0.0015 },
-        { color: 'rgba(139, 92, 246, 0.10)', amp: 30 * dpr, freq: 0.0022, speed: 0.001 },
-      ];
-
-      for (const l of lines) {
-        ctx.beginPath();
-        ctx.strokeStyle = l.color;
-        ctx.lineWidth = 2 * dpr;
-        for (let x = 0; x <= w; x += 12 * dpr) {
-          const y =
-            h * 0.86 +
-            Math.sin(x * l.freq + t * l.speed) * l.amp +
-            Math.cos(x * l.freq * 0.5 - t * l.speed) * (l.amp * 0.5);
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-
-      raf = requestAnimationFrame(draw);
-    };
-
-    raf = requestAnimationFrame(draw);
     return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', resize);
+      active = false;
+      if (pollTimer) window.clearInterval(pollTimer);
     };
-  }, []);
+  }, [isGoogleModalOpen, onLoginGoogle]);
 
   // Submit Etapa 1: Login ou Registro por E-mail
   const handleAccountSubmit = async (e: React.FormEvent) => {
@@ -643,23 +657,29 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     setError(null);
     const clientId = activeGoogleClientId?.trim();
 
-    if (!clientId) {
-      setError(
-        `Nenhum Google Auth ID configurado para ${platformLabel}. Acesse o Painel Admin (/admin -> Configurações) no navegador para vincular seu Auth ID.`
-      );
+    // Na Smart TV / TV Box ou App Android (WebView Capacitor), o Google bloqueia popups OAuth WebView (Erro 400/403).
+    // Abre imediatamente o Modal Oficial Google Nativo com QR Code (Pareamento pelo Celular) + Seleção Rápida no Controle Remoto!
+    const isCapacitorApk = Boolean((window as any).Capacitor?.isNativePlatform?.());
+    if (isCapacitorApk || isNativeApp || detectedPlatform === 'tv' || detectedPlatform === 'android') {
+      setIsGoogleModalOpen(true);
+      return;
+    }
+
+    const oauthClientId = webOAuthClientId || clientId;
+    if (!oauthClientId) {
+      setIsGoogleModalOpen(true);
       return;
     }
 
     const hostname = window.location.hostname;
     const isRawIpOrigin = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
 
-    // O Google Cloud Console proíbe IP numérico puro (ex: http://184.107.141.88:8090) e HTTP sem SSL.
-    // Se o cliente abriu pelo IP ou HTTP da VPS, redireciona o fluxo OAuth para o domínio HTTPS oficial da VPS!
+    // Se o cliente abriu pelo IP ou HTTP da VPS, redireciona para o domínio HTTPS oficial da VPS usando o Web Client ID!
     if (isRawIpOrigin || (hostname.includes('vps9818.panel.icontainer.run') && window.location.protocol === 'http:')) {
       const httpsOrigin = 'https://nextplay.vps9818.panel.icontainer.run';
       const oauthUrl =
         `https://accounts.google.com/o/oauth2/v2/auth` +
-        `?client_id=${encodeURIComponent(clientId)}` +
+        `?client_id=${encodeURIComponent(oauthClientId)}` +
         `&redirect_uri=${encodeURIComponent(httpsOrigin)}` +
         `&response_type=token` +
         `&scope=${encodeURIComponent('openid email profile')}` +
@@ -668,29 +688,16 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
       return;
     }
 
-    const isCapacitorApk = Boolean((window as any).Capacitor?.isNativePlatform?.());
-
-    // No APK Android (Celular, Tablet, Android TV), a origem é http://localhost e redireciona para o accounts.google.com real
-    if (isCapacitorApk) {
-      const redirectUri = window.location.origin; // http://localhost
-      const oauthUrl =
-        `https://accounts.google.com/o/oauth2/v2/auth` +
-        `?client_id=${encodeURIComponent(clientId)}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=token` +
-        `&scope=${encodeURIComponent('openid email profile')}` +
-        `&prompt=select_account`;
-      window.location.href = oauthUrl;
-      return;
-    }
-
-    // No Navegador Web, usa o popup oficial Google Identity Services (initTokenClient)
+    // No Navegador Web, usa o popup oficial Google Identity Services (initTokenClient) com o Web Client ID
     if (window.google?.accounts?.oauth2) {
       try {
         const tokenClient = window.google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
+          client_id: oauthClientId,
           scope: 'openid email profile',
           prompt: 'select_account',
+          error_callback: () => {
+            setIsGoogleModalOpen(true);
+          },
           callback: async (tokenResponse) => {
             if (tokenResponse.error || !tokenResponse.access_token) {
               setError('Autenticação Google cancelada ou não autorizada.');
@@ -708,7 +715,11 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                 name: profile.name || profile.given_name || profile.email?.split('@')[0],
                 avatarUrl: profile.picture,
                 accessToken: tokenResponse.access_token,
+                tvCode: urlTvCode || undefined,
               });
+              if (urlTvCode) {
+                setTvApprovedSuccess(true);
+              }
             } catch (err) {
               setError(
                 err instanceof Error ? err.message : 'Erro ao validar dados da conta Google.'
@@ -721,35 +732,14 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
         tokenClient.requestAccessToken({ prompt: 'select_account' });
         return;
       } catch {
-        // Fallback para popup OAuth2 direto do accounts.google.com abaixo
+        // Fallback abaixo
       }
     }
 
-    // Fallback: Abre o Popup Oficial do accounts.google.com/o/oauth2/v2/auth
-    const redirectUri = window.location.origin;
-    const oauthUrl =
-      `https://accounts.google.com/o/oauth2/v2/auth` +
-      `?client_id=${encodeURIComponent(clientId)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=token` +
-      `&scope=${encodeURIComponent('openid email profile')}` +
-      `&prompt=select_account`;
-
-    const width = 500;
-    const height = 620;
-    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
-    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
-    const popup = window.open(
-      oauthUrl,
-      'GoogleOAuthOfficialPopup',
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-    );
-    if (!popup) {
-      window.location.href = oauthUrl;
-    }
+    setIsGoogleModalOpen(true);
   };
 
-  // Submit Login com Google (Fallback caso o navegador bloqueie popups)
+  // Submit Login com Google (Direto na TV / App ou Fallback Web)
   const handleGoogleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!googleEmail.trim() || !googleEmail.includes('@')) {
@@ -764,7 +754,11 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
       await onLoginGoogle({
         email: googleEmail.trim(),
         name: googleName.trim() || googleEmail.split('@')[0],
+        tvCode: urlTvCode || undefined,
       });
+      if (urlTvCode) {
+        setTvApprovedSuccess(true);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha no login com Google.');
     } finally {
@@ -1419,13 +1413,13 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
         </div>
       </main>
 
-      {/* MODAL DE LOGIN COM CONTA GOOGLE */}
+      {/* MODAL DE LOGIN COM CONTA GOOGLE (TV, ANDROID & WEB) */}
       {isGoogleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#111622] border border-white/15 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center">
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#111622] border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path
                       fill="#EA4335"
@@ -1446,63 +1440,142 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Fazer login com o Google</h3>
-                  <p className="text-xs text-slate-400">Prosseguir para {appConfig.appName}</p>
+                  <h3 className="text-base sm:text-lg font-bold text-white">
+                    Entrar com Conta Google
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Sincroniza automaticamente sua lista IPTV no {appConfig.appName}
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
+                data-tv-back="true"
                 onClick={() => setIsGoogleModalOpen(false)}
-                className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white cursor-pointer"
               >
                 Fechar
               </button>
             </div>
 
-            <form onSubmit={handleGoogleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Seu E-mail do Google (Gmail) *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={googleEmail}
-                  onChange={(e) => setGoogleEmail(e.target.value)}
-                  placeholder="seu.nome@gmail.com"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/15 text-sm text-white focus:outline-none focus:border-cyan-400"
-                />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Coluna 1: Entrar Direto no Aparelho / Controle Remoto */}
+              <div className="space-y-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                  Opção 1: Entrar Direto neste Aparelho
+                </p>
+
+                {getSavedGoogleAccounts().length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-300 font-semibold">
+                      Contas Google salvas (1 clique):
+                    </p>
+                    {getSavedGoogleAccounts().map((acc) => (
+                      <button
+                        key={acc.email}
+                        type="button"
+                        onClick={async () => {
+                          setIsGoogleModalOpen(false);
+                          setIsLoading(true);
+                          setLoadingText('Autenticando com Google...');
+                          try {
+                            await onLoginGoogle({
+                              email: acc.email,
+                              name: acc.name || acc.email.split('@')[0],
+                              avatarUrl: acc.avatarUrl,
+                            });
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : 'Erro ao entrar.');
+                          } finally {
+                            setIsLoading(false);
+                          }
+                        }}
+                        className="w-full p-3 rounded-xl bg-slate-900 hover:bg-slate-800 focus:bg-emerald-500 focus:text-slate-950 border border-slate-700 text-left flex items-center gap-3 transition cursor-pointer"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center shrink-0">
+                          {(acc.name || acc.email).charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate">{acc.name}</p>
+                          <p className="text-[11px] opacity-80 truncate">{acc.email}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <form onSubmit={handleGoogleSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Seu E-mail do Google (Gmail) *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={googleEmail}
+                      onChange={(e) => setGoogleEmail(e.target.value)}
+                      placeholder="seu.email@gmail.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d14] border border-slate-700 text-sm text-white focus:outline-none focus:border-emerald-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Seu Nome (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={googleName}
+                      onChange={(e) => setGoogleName(e.target.value)}
+                      placeholder="Como aparece no perfil"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#090d14] border border-slate-700 text-sm text-white focus:outline-none focus:border-emerald-400"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 focus:bg-white text-slate-950 font-black text-xs uppercase tracking-wide shadow-lg cursor-pointer transition"
+                  >
+                    Entrar Agora com Google
+                  </button>
+                </form>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Seu Nome (Opcional)
-                </label>
-                <input
-                  type="text"
-                  value={googleName}
-                  onChange={(e) => setGoogleName(e.target.value)}
-                  placeholder="Ex: Guilherme"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/15 text-sm text-white focus:outline-none focus:border-cyan-400"
-                />
-              </div>
+              {/* Coluna 2: Pareamento Rápido via Celular (QR Code para Smart TV) */}
+              <div className="bg-[#0b0f17] border border-slate-800 rounded-2xl p-4 text-center space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                  Opção 2: Entrar pelo Celular (Smart TV)
+                </p>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Está na TV? Escaneie o QR Code abaixo com a câmera do seu celular e faça login com
+                  sua conta Google no celular. A TV entrará sozinha!
+                </p>
 
-              <div className="flex items-center justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsGoogleModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white shadow-lg shadow-blue-600/25 cursor-pointer"
-                >
-                  Continuar com Google
-                </button>
+                {tvPairingCode ? (
+                  <>
+                    <div className="bg-white p-2.5 rounded-xl inline-block mx-auto">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                          `https://nextplay.vps9818.panel.icontainer.run/?tv=${tvPairingCode}`
+                        )}`}
+                        alt="QR Code Login TV"
+                        className="w-36 h-36 object-contain"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-400">Código desta TV:</p>
+                      <p className="text-xl font-mono font-black tracking-widest text-white mt-0.5">
+                        {tvPairingCode.slice(0, 3)}-{tvPairingCode.slice(3)}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-8 text-xs text-slate-500">
+                    Gerando código de pareamento...
+                  </div>
+                )}
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
