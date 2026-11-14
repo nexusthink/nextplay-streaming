@@ -68,10 +68,16 @@ export interface UserAccount {
   profiles?: UserSubProfile[];
 }
 
+export type ClientDevicePlatform = 'web' | 'android' | 'tv';
+
 export interface PublicAppConfig {
   appName: string;
   supportWhatsapp: string;
   googleClientId: string;
+  googleClientIdWeb?: string;
+  googleClientIdAndroid?: string;
+  googleClientIdTv?: string;
+  googleSmartSwitch?: boolean;
   allowDemoMode: boolean;
 }
 

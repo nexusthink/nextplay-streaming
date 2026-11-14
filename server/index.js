@@ -290,7 +290,11 @@ app.get('/api/public/config', (_req, res) => {
     settings: {
       appName: db.settings.appName || 'NextPlay',
       supportWhatsapp: db.settings.supportWhatsapp || '5511999999999',
-      googleClientId: db.settings.googleClientId || '',
+      googleClientId: db.settings.googleClientId || db.settings.googleClientIdWeb || '',
+      googleClientIdWeb: db.settings.googleClientIdWeb || db.settings.googleClientId || '',
+      googleClientIdAndroid: db.settings.googleClientIdAndroid || '',
+      googleClientIdTv: db.settings.googleClientIdTv || '',
+      googleSmartSwitch: db.settings.googleSmartSwitch !== false,
       allowDemoMode: db.settings.allowDemoMode !== false,
     },
     servers: activeServers,
@@ -904,6 +908,10 @@ app.put('/api/admin/settings', requireAdminAuth, (req, res) => {
     appName,
     supportWhatsapp,
     googleClientId,
+    googleClientIdWeb,
+    googleClientIdAndroid,
+    googleClientIdTv,
+    googleSmartSwitch,
     allowDemoMode,
     adminEmail,
     adminName,
@@ -913,6 +921,21 @@ app.put('/api/admin/settings', requireAdminAuth, (req, res) => {
   if (appName !== undefined) db.settings.appName = String(appName).trim() || 'NextPlay';
   if (supportWhatsapp !== undefined) db.settings.supportWhatsapp = String(supportWhatsapp).trim();
   if (googleClientId !== undefined) db.settings.googleClientId = String(googleClientId).trim();
+  if (googleClientIdWeb !== undefined) {
+    db.settings.googleClientIdWeb = String(googleClientIdWeb).trim();
+    if (!googleClientId && db.settings.googleClientIdWeb) {
+      db.settings.googleClientId = db.settings.googleClientIdWeb;
+    }
+  }
+  if (googleClientIdAndroid !== undefined) {
+    db.settings.googleClientIdAndroid = String(googleClientIdAndroid).trim();
+  }
+  if (googleClientIdTv !== undefined) {
+    db.settings.googleClientIdTv = String(googleClientIdTv).trim();
+  }
+  if (googleSmartSwitch !== undefined) {
+    db.settings.googleSmartSwitch = Boolean(googleSmartSwitch);
+  }
   if (allowDemoMode !== undefined) db.settings.allowDemoMode = Boolean(allowDemoMode);
 
   if (adminEmail && String(adminEmail).includes('@')) {

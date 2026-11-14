@@ -24,7 +24,11 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { PublicAppConfig, PublicServerOption, UserAccount } from '../types/iptv';
-import { getSavedGoogleAccounts } from '../services/authService';
+import {
+  getSavedGoogleAccounts,
+  isRunningInNativeApp,
+  resolvePlatformGoogleClientId,
+} from '../services/authService';
 
 declare global {
   interface Window {
@@ -128,6 +132,14 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
+  // Switch Inteligente: detecta automaticamente se está em Web, Android Mobile ou Smart TV
+  const isNativeApp = isRunningInNativeApp();
+  const {
+    clientId: activeGoogleClientId,
+    platform: detectedPlatform,
+    platformLabel,
+  } = resolvePlatformGoogleClientId(appConfig);
+
   // Pré-seleciona o servidor padrão definido pelo Admin ou o já vinculado ao usuário
   useEffect(() => {
     if (currentUser?.iptvLink) {
@@ -230,7 +242,7 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
 
   // Carrega a biblioteca oficial Google Identity Services se houver googleClientId configurado
   useEffect(() => {
-    const clientId = appConfig.googleClientId?.trim();
+    const clientId = activeGoogleClientId?.trim();
     if (!clientId) return;
     if (document.getElementById('google-gsi-client-script')) return;
     const script = document.createElement('script');
@@ -239,7 +251,7 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     script.async = true;
     script.defer = true;
     document.head.appendChild(script);
-  }, [appConfig.googleClientId]);
+  }, [activeGoogleClientId]);
 
   // Processa retorno oficial OAuth 2.0 do Google (#access_token=...) no Web, APK Android e Android TV
   useEffect(() => {
@@ -626,15 +638,14 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
     popup.focus();
   };
 
-  // Login Oficial Google OAuth 2.0 (accounts.google.com) Unificado:
-  // Usa 1 ÚNICO Client ID do tipo "Aplicativo da Web" para Web, VPS, Celular, Tablet e Android TV!
+  // Login Oficial Google OAuth 2.0 (accounts.google.com) com Switch Inteligente por Plataforma (Web / Android / TV)
   const handleOpenGooglePopup = () => {
     setError(null);
-    const clientId = appConfig.googleClientId?.trim();
+    const clientId = activeGoogleClientId?.trim();
 
     if (!clientId) {
       setError(
-        'Para usar o login oficial do Google (accounts.google.com), acesse o Painel Admin (/admin -> Configurações) e cole o seu Google Client ID do tipo "Aplicativo da Web".'
+        `Nenhum Google Auth ID configurado para ${platformLabel}. Acesse o Painel Admin (/admin -> Configurações) no navegador para vincular seu Auth ID.`
       );
       return;
     }
@@ -822,15 +833,17 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
           className="flex items-center gap-2.5"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <button
-            type="button"
-            onClick={onOpenAdminPanel}
-            title="Abrir Painel Administrativo (/admin)"
-            className="px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <Shield className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Painel Admin</span>
-          </button>
+          {!isNativeApp && (
+            <button
+              type="button"
+              onClick={onOpenAdminPanel}
+              title="Abrir Painel Administrativo (/admin)"
+              className="px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Shield className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Painel Admin</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -964,33 +977,48 @@ export const AuthPortalScreen: React.FC<AuthPortalScreenProps> = ({
                 </div>
               )}
 
-              {/* Botão Login com Google (Abre Janela Popup Direta do Google) */}
-              <button
-                type="button"
-                disabled={isLoading}
-                onClick={handleOpenGooglePopup}
-                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-gray-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-2.5 transition shadow-md cursor-pointer mb-5"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path
-                    fill="#EA4335"
-                    d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"
-                  />
-                </svg>
-                <span>Continuar com conta Google</span>
-              </button>
+              {/* Botão Login com Google (Usa automaticamente o Auth ID da plataforma detectada: Web, Android ou TV) */}
+              <div className="mb-5 space-y-1.5">
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={handleOpenGooglePopup}
+                  className="w-full py-3 px-4 rounded-xl bg-white hover:bg-gray-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-2.5 transition shadow-md cursor-pointer"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#EA4335"
+                      d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.9C3.5 21.4 7.4 24 12 24z"
+                    />
+                  </svg>
+                  <span>Continuar com conta Google</span>
+                </button>
+                <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-lime-400" />
+                  <span>
+                    Dispositivo detectado:{' '}
+                    <strong className="text-lime-300">
+                      {detectedPlatform === 'tv'
+                        ? 'Smart TV / TV Box'
+                        : detectedPlatform === 'android'
+                        ? 'Android Mobile'
+                        : 'Web'}
+                    </strong>
+                  </span>
+                </div>
+              </div>
 
               <div className="relative flex py-1 items-center mb-5">
                 <div className="flex-grow border-t border-slate-800" />

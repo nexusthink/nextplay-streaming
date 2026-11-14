@@ -61,6 +61,7 @@ import {
   fetchCurrentSession,
   fetchPublicConfig,
   getUserToken,
+  isRunningInNativeApp,
   linkIptvToAccount,
   loginAccount,
   loginWithGoogle,
@@ -1827,17 +1828,19 @@ export const App: React.FC = () => {
                       <span>Alterar Servidor / Login IPTV</span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        handleOpenAdminPanel();
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition cursor-pointer"
-                    >
-                      <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Painel Admin (/admin)</span>
-                    </button>
+                    {!isRunningInNativeApp() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          handleOpenAdminPanel();
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 flex items-center gap-2 transition cursor-pointer"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Painel Admin (/admin)</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -2064,100 +2067,28 @@ export const App: React.FC = () => {
                   />
                 </div>
               ) : (
-                <>
-                  {/* Visão Início (Home Geral com Destaques e Histórico) */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-3 px-4 sm:px-8 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-white">
-                        {selectedNav === 'favorites'
-                          ? 'Minha Lista de Favoritos'
-                          : selectedNav === 'history'
-                          ? 'Continuar Assistindo'
-                          : 'Destaques do Catálogo'}
-                      </h3>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                        {filteredChannels.length.toLocaleString('pt-BR')} títulos
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1">
-                      {/* Seletor de Modo: Estilo Streaming vs Lista */}
-                      <div className="flex items-center bg-[#0d141c] p-0.5 rounded-lg border border-slate-800 mr-2 shrink-0">
-                        <button
-                          onClick={() => setCatalogLayout('netflix')}
-                          title="Visualização Estilo Streaming"
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition ${
-                            catalogLayout === 'netflix'
-                              ? 'bg-cyan-500 text-slate-950 shadow-neon-cyan'
-                              : 'text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          <LayoutGrid className="w-3.5 h-3.5" />
-                          Streaming
-                        </button>
-                        <button
-                          onClick={() => setCatalogLayout('list')}
-                          title="Visualização Clássica em Lista"
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition ${
-                            catalogLayout === 'list'
-                              ? 'bg-cyan-500 text-slate-950 shadow-neon-cyan'
-                              : 'text-slate-400 hover:text-white'
-                          }`}
-                        >
-                          <List className="w-3.5 h-3.5" />
-                          Lista
-                        </button>
-                      </div>
-
-                      <button
-                        onClick={() => setSelectedCategory('ALL')}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
-                          selectedCategory === 'ALL'
-                            ? 'bg-cyan-500 text-slate-950 font-bold'
-                            : 'bg-[#121a23] text-slate-400 hover:text-white border border-slate-800'
-                        }`}
-                      >
-                        Todas Categorias
-                      </button>
-                      {categories.slice(0, 6).map((c) => (
-                        <button
-                          key={c.id}
-                          onClick={() => setSelectedCategory(c.name)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition shrink-0 ${
-                            selectedCategory === c.name
-                              ? 'bg-cyan-500 text-slate-950 font-bold'
-                              : 'bg-[#121a23] text-slate-400 hover:text-white border border-slate-800'
-                          }`}
-                        >
-                          {c.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex-1 min-h-0">
-                    {catalogLayout === 'netflix' ? (
-                      <NetflixCatalogView
-                        channels={filteredChannels}
-                        history={history}
-                        favorites={favorites}
-                        activeChannelId={activeChannel?.id}
-                        onSelectChannel={handleSelectChannel}
-                        onToggleFavorite={handleToggleFavorite}
-                        selectedMediaType={selectedMediaType}
-                      />
-                    ) : (
-                      <VirtualChannelCatalog
-                        channels={filteredChannels}
-                        activeChannelId={activeChannel?.id}
-                        activeSeriesId={activeSeriesDetails?.seriesId || activeChannel?.seriesId}
-                        favorites={favorites}
-                        onSelectChannel={handleSelectChannel}
-                        onToggleFavorite={handleToggleFavorite}
-                      />
-                    )}
-                  </div>
-                </>
+                <div className="flex-1 min-h-0">
+                  {catalogLayout === 'netflix' ? (
+                    <NetflixCatalogView
+                      channels={filteredChannels}
+                      history={history}
+                      favorites={favorites}
+                      activeChannelId={activeChannel?.id}
+                      onSelectChannel={handleSelectChannel}
+                      onToggleFavorite={handleToggleFavorite}
+                      selectedMediaType={selectedMediaType}
+                    />
+                  ) : (
+                    <VirtualChannelCatalog
+                      channels={filteredChannels}
+                      activeChannelId={activeChannel?.id}
+                      activeSeriesId={activeSeriesDetails?.seriesId || activeChannel?.seriesId}
+                      favorites={favorites}
+                      onSelectChannel={handleSelectChannel}
+                      onToggleFavorite={handleToggleFavorite}
+                    />
+                  )}
+                </div>
               )}
             </main>
 

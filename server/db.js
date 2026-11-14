@@ -63,6 +63,10 @@ const DEFAULT_DB = {
     appName: 'NextPlay',
     supportWhatsapp: '5511999999999',
     googleClientId: '',
+    googleClientIdWeb: '',
+    googleClientIdAndroid: '',
+    googleClientIdTv: '',
+    googleSmartSwitch: true,
     allowDemoMode: true,
   },
   servers: [

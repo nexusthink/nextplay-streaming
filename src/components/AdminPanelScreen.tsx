@@ -105,6 +105,11 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
   const [appName, setAppName] = useState('NextPlay');
   const [supportWhatsapp, setSupportWhatsapp] = useState('');
   const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientIdWeb, setGoogleClientIdWeb] = useState('');
+  const [googleClientIdAndroid, setGoogleClientIdAndroid] = useState('');
+  const [googleClientIdTv, setGoogleClientIdTv] = useState('');
+  const [googleSmartSwitch, setGoogleSmartSwitch] = useState(true);
+  const [selectedAuthPlatformTab, setSelectedAuthPlatformTab] = useState<'web' | 'android' | 'tv'>('web');
   const [allowDemoMode, setAllowDemoMode] = useState(true);
   const [adminEmail, setAdminEmail] = useState('');
   const [adminName, setAdminName] = useState('');
@@ -136,7 +141,12 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
       setOverview(data);
       setAppName(data.settings.appName || 'NextPlay');
       setSupportWhatsapp(data.settings.supportWhatsapp || '');
-      setGoogleClientId(data.settings.googleClientId || '');
+      const webId = data.settings.googleClientIdWeb || data.settings.googleClientId || '';
+      setGoogleClientId(webId);
+      setGoogleClientIdWeb(webId);
+      setGoogleClientIdAndroid(data.settings.googleClientIdAndroid || '');
+      setGoogleClientIdTv(data.settings.googleClientIdTv || '');
+      setGoogleSmartSwitch(data.settings.googleSmartSwitch !== false);
       setAllowDemoMode(data.settings.allowDemoMode !== false);
       setAdminEmail(data.settings.adminEmail || 'admin@nextplay.com');
       setAdminName(data.settings.adminName || 'Administrador');
@@ -403,7 +413,11 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
       await adminUpdateSettings({
         appName,
         supportWhatsapp,
-        googleClientId,
+        googleClientId: googleClientIdWeb.trim() || googleClientId.trim(),
+        googleClientIdWeb: googleClientIdWeb.trim() || googleClientId.trim(),
+        googleClientIdAndroid: googleClientIdAndroid.trim(),
+        googleClientIdTv: googleClientIdTv.trim(),
+        googleSmartSwitch,
         allowDemoMode,
         adminEmail,
         adminName,
@@ -1121,46 +1135,136 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
               </div>
             </div>
 
-            <div className="space-y-3">
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">
-                Google OAuth Client ID — Único para Web, Celular e Android TV
-              </label>
-              <input
-                type="text"
-                value={googleClientId}
-                onChange={(e) => setGoogleClientId(e.target.value)}
-                placeholder="Ex: 123456789-abcdef.apps.googleusercontent.com"
-                className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-red-500 font-mono"
-              />
+            {/* Switch Inteligente de Google OAuth Client IDs por Plataforma (Web • Android • Smart TV) */}
+            <div className="space-y-4 p-5 rounded-2xl bg-black/40 border border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-lime-400" />
+                    Switch Inteligente de Google Auth ID (Web • Android • TV)
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Vincule o Client ID de cada dispositivo. O aplicativo detecta automaticamente se está rodando na Web, Celular Android ou Smart TV e usa o Auth ID correspondente.
+                  </p>
+                </div>
 
-              <div className="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-xs text-gray-300 space-y-2">
-                <p className="font-bold text-cyan-300">
-                  Como usar 1 ÚNICO Client ID no Google Cloud para Web + Celular + TV:
-                </p>
-                <ol className="list-decimal list-inside space-y-1 text-[11px] text-gray-300">
-                  <li>
-                    No Google Cloud Console (<strong>Credenciais &rarr; Criar ID do cliente OAuth</strong>),
-                    escolha <strong>APENAS</strong> o tipo <strong>&quot;Aplicativo da Web&quot;</strong> (não crie tipo Android nem TV, pois nosso APK Android/TV usa motor Web unificado).
-                  </li>
-                  <li>
-                    Dentro desse único Client ID Web, adicione em{' '}
-                    <strong>Origens JavaScript autorizadas</strong> e em{' '}
-                    <strong>URIs de redirecionamento autorizados</strong> estas URLs:
-                  </li>
-                </ol>
-                <div className="grid grid-cols-1 gap-1.5 pt-1 font-mono text-[11px]">
-                  <div className="px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-emerald-300 flex items-center justify-between">
-                    <span>https://nextplay.vps9818.panel.icontainer.run</span>
-                    <span className="text-[10px] text-gray-400 font-sans">
-                      (Domínio HTTPS oficial da sua VPS — aceito pelo Google!)
+                <label className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-lime-500/10 border border-lime-500/30 cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={googleSmartSwitch}
+                    onChange={(e) => setGoogleSmartSwitch(e.target.checked)}
+                    className="w-4 h-4 accent-lime-500 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-lime-300">
+                    Auto-Switch Ativo
+                  </span>
+                </label>
+              </div>
+
+              {/* Seletor Visual de Plataforma */}
+              <div className="grid grid-cols-3 gap-2.5">
+                {(
+                  [
+                    {
+                      id: 'web',
+                      title: '🌐 Web Browser',
+                      subtitle: 'Navegador / VPS',
+                      value: googleClientIdWeb,
+                    },
+                    {
+                      id: 'android',
+                      title: '📱 Android Mobile',
+                      subtitle: 'Celular & Tablet',
+                      value: googleClientIdAndroid,
+                    },
+                    {
+                      id: 'tv',
+                      title: '📺 Smart TV / Box',
+                      subtitle: 'Android TV & Stick',
+                      value: googleClientIdTv,
+                    },
+                  ] as const
+                ).map((plat) => {
+                  const isSelected = selectedAuthPlatformTab === plat.id;
+                  const isConfigured = Boolean(plat.value.trim());
+                  return (
+                    <button
+                      key={plat.id}
+                      type="button"
+                      onClick={() => setSelectedAuthPlatformTab(plat.id)}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-lime-500/15 border-lime-400 text-white shadow-lg'
+                          : 'bg-black/40 border-white/10 text-gray-400 hover:text-white hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold">{plat.title}</span>
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            isConfigured ? 'bg-lime-400' : 'bg-amber-400/60'
+                          }`}
+                          title={isConfigured ? 'ID Configurado' : 'Usando Fallback Web'}
+                        />
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{plat.subtitle}</p>
+                      <p className="text-[10px] font-mono mt-1.5 truncate text-lime-300/90">
+                        {isConfigured ? plat.value.trim() : 'Fallback automático'}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Campos de Auth ID para cada Plataforma */}
+              <div className="space-y-3 pt-1">
+                <div className={selectedAuthPlatformTab === 'web' ? 'block' : 'hidden sm:block'}>
+                  <label className="flex items-center justify-between text-xs font-semibold text-gray-300 mb-1">
+                    <span>🌐 Auth ID — Web (Aplicativo da Web / Principal)</span>
+                    <span className="text-[10px] text-lime-400 font-mono">Detectado no Navegador</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={googleClientIdWeb}
+                    onChange={(e) => {
+                      setGoogleClientIdWeb(e.target.value);
+                      setGoogleClientId(e.target.value);
+                    }}
+                    placeholder="Ex: 123456789-web.apps.googleusercontent.com"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-lime-400 font-mono"
+                  />
+                </div>
+
+                <div className={selectedAuthPlatformTab === 'android' ? 'block' : 'hidden sm:block'}>
+                  <label className="flex items-center justify-between text-xs font-semibold text-gray-300 mb-1">
+                    <span>📱 Auth ID — Android (Celular & Tablet)</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">
+                      Detectado no APK Mobile (se vazio, usa o Web)
                     </span>
-                  </div>
-                  <div className="px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-emerald-300 flex items-center justify-between">
-                    <span>http://localhost</span>
-                    <span className="text-[10px] text-gray-400 font-sans">
-                      (Faz funcionar no APK Celular, Tablet e Android TV)
+                  </label>
+                  <input
+                    type="text"
+                    value={googleClientIdAndroid}
+                    onChange={(e) => setGoogleClientIdAndroid(e.target.value)}
+                    placeholder="Ex: 123456789-android.apps.googleusercontent.com (ou deixe vazio p/ usar o Web)"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-cyan-400 font-mono"
+                  />
+                </div>
+
+                <div className={selectedAuthPlatformTab === 'tv' ? 'block' : 'hidden sm:block'}>
+                  <label className="flex items-center justify-between text-xs font-semibold text-gray-300 mb-1">
+                    <span>📺 Auth ID — Smart TV / Android TV / TV Box</span>
+                    <span className="text-[10px] text-purple-400 font-mono">
+                      Detectado na TV (se vazio, usa o Web)
                     </span>
-                  </div>
+                  </label>
+                  <input
+                    type="text"
+                    value={googleClientIdTv}
+                    onChange={(e) => setGoogleClientIdTv(e.target.value)}
+                    placeholder="Ex: 123456789-tv.apps.googleusercontent.com (ou deixe vazio p/ usar o Web)"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-purple-400 font-mono"
+                  />
                 </div>
               </div>
             </div>

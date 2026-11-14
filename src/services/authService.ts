@@ -1,5 +1,6 @@
 import {
   AdminServerItem,
+  ClientDevicePlatform,
   PublicAppConfig,
   PublicServerOption,
   UserAccount,
@@ -7,6 +8,86 @@ import {
   WatchHistoryItem,
   XtreamAccountInfo,
 } from '../types/iptv';
+
+// Identifica se está rodando dentro do App Nativo APK (Android Mobile/Tablet ou Android TV)
+export function isRunningInNativeApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (ua.includes('NextPlayApp/TV') || ua.includes('NextPlayApp/Android')) return true;
+  if (Boolean((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.())) {
+    return true;
+  }
+  if (window.location.hostname === 'localhost' && !window.location.port && /Android/i.test(ua)) {
+    return true;
+  }
+  return false;
+}
+
+// Detecta automaticamente a plataforma do dispositivo: 'tv' (Smart TV / TV Box), 'android' (Celular/Tablet) ou 'web'
+export function detectClientPlatform(): ClientDevicePlatform {
+  if (typeof window === 'undefined') return 'web';
+  const ua = navigator.userAgent || '';
+
+  if (
+    ua.includes('NextPlayApp/TV') ||
+    /(Android TV|BRAVIA|AFT|FireTV|MiBOX|MIBOX|SHIELD|Leanback|SmartTV|GoogleTV|Tizen|Web0S|TV Box)/i.test(ua)
+  ) {
+    return 'tv';
+  }
+
+  if (
+    ua.includes('NextPlayApp/Android') ||
+    isRunningInNativeApp() ||
+    (/Android/i.test(ua) && Boolean((window as unknown as { Capacitor?: unknown }).Capacitor))
+  ) {
+    return 'android';
+  }
+
+  return 'web';
+}
+
+// Switch Inteligente: seleciona automaticamente o Auth ID (Client ID) correspondente ao tipo de app em uso
+export function resolvePlatformGoogleClientId(config: PublicAppConfig): {
+  clientId: string;
+  platform: ClientDevicePlatform;
+  platformLabel: string;
+} {
+  const platform = detectClientPlatform();
+  const webId = (config.googleClientIdWeb || config.googleClientId || '').trim();
+  const androidId = (config.googleClientIdAndroid || '').trim();
+  const tvId = (config.googleClientIdTv || '').trim();
+  const smartSwitch = config.googleSmartSwitch !== false;
+
+  if (!smartSwitch) {
+    return {
+      clientId: webId || androidId || tvId,
+      platform,
+      platformLabel: platform === 'tv' ? 'Smart TV / TV Box' : platform === 'android' ? 'Android Mobile' : 'Web Browser',
+    };
+  }
+
+  if (platform === 'tv') {
+    return {
+      clientId: tvId || webId || androidId,
+      platform: 'tv',
+      platformLabel: 'Smart TV / TV Box',
+    };
+  }
+
+  if (platform === 'android') {
+    return {
+      clientId: androidId || webId || tvId,
+      platform: 'android',
+      platformLabel: 'Android (Celular / Tablet)',
+    };
+  }
+
+  return {
+    clientId: webId || androidId || tvId,
+    platform: 'web',
+    platformLabel: 'Web Browser',
+  };
+}
 
 export const AUTH_STORAGE_KEYS = {
   USER_TOKEN: 'nextplay_user_token_v1',
@@ -831,6 +912,10 @@ export async function adminUpdateSettings(payload: {
   appName?: string;
   supportWhatsapp?: string;
   googleClientId?: string;
+  googleClientIdWeb?: string;
+  googleClientIdAndroid?: string;
+  googleClientIdTv?: string;
+  googleSmartSwitch?: boolean;
   allowDemoMode?: boolean;
   adminEmail?: string;
   adminName?: string;

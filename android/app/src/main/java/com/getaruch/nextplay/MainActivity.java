@@ -1,5 +1,9 @@
 package com.getaruch.nextplay;
 
+import android.app.UiModeManager;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.view.WindowManager;
 import android.webkit.WebSettings;
@@ -19,6 +23,22 @@ public class MainActivity extends BridgeActivity {
             webView.setFocusable(true);
             webView.setFocusableInTouchMode(true);
 
+            // Identifica nativamente no Android se o aparelho é uma Smart TV / TV Box ou Celular / Tablet
+            boolean isTelevision = false;
+            try {
+                UiModeManager uiModeManager = (UiModeManager) getSystemService(Context.UI_MODE_SERVICE);
+                if (uiModeManager != null && uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
+                    isTelevision = true;
+                }
+                PackageManager pm = getPackageManager();
+                if (pm != null && (pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK) || pm.hasSystemFeature("android.hardware.type.television"))) {
+                    isTelevision = true;
+                }
+            } catch (Exception ignored) {
+            }
+
+            String platformTag = isTelevision ? "NextPlayApp/TV" : "NextPlayApp/Android";
+
             WebSettings settings = webView.getSettings();
             settings.setMediaPlaybackRequiresUserGesture(false);
             settings.setDomStorageEnabled(true);
@@ -29,14 +49,14 @@ public class MainActivity extends BridgeActivity {
             settings.setLoadWithOverviewMode(true);
 
             // Remove marcador "; wv" do WebView para permitir login oficial Google OAuth (accounts.google.com)
-            // usando o mesmo Client ID Web em Celular, Tablet e Android TV sem erro 403 disallowed_useragent
+            // e anexa o identificador de plataforma (NextPlayApp/TV ou NextPlayApp/Android) para o Switch Inteligente de Auth ID
             String defaultUa = settings.getUserAgentString();
             if (defaultUa != null) {
                 String cleanChromeUa = defaultUa
                     .replace("; wv)", ")")
                     .replace("; wv", "")
                     .replace("Version/4.0 ", "");
-                settings.setUserAgentString(cleanChromeUa);
+                settings.setUserAgentString(cleanChromeUa + " " + platformTag);
             }
         }
     }
