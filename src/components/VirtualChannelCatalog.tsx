@@ -77,6 +77,9 @@ export const VirtualChannelCatalog: React.FC<VirtualChannelCatalogProps> = ({
           return (
             <div
               key={item.id}
+              tabIndex={0}
+              role="button"
+              data-tv-card="true"
               style={{
                 position: 'absolute',
                 top: `${topOffset}px`,
@@ -85,6 +88,12 @@ export const VirtualChannelCatalog: React.FC<VirtualChannelCatalogProps> = ({
                 height: `${ROW_HEIGHT - 8}px`,
               }}
               onClick={() => onSelectChannel(item)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectChannel(item);
+                }
+              }}
               className={`group flex items-center justify-between px-3.5 py-2 rounded-xl border cursor-pointer transition-all ${
                 isSelected
                   ? 'bg-gradient-to-r from-cyan-500/20 via-cyan-500/10 to-transparent border-cyan-400/60 shadow-neon-cyan'

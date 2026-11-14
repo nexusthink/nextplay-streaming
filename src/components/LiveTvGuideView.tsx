@@ -623,7 +623,16 @@ export const LiveTvGuideView: React.FC<LiveTvGuideViewProps> = ({
             return (
               <div
                 key={net.id}
+                tabIndex={0}
+                role="button"
+                data-tv-card="true"
                 onClick={() => handleSelectNetworkCard(net)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleSelectNetworkCard(net);
+                  }
+                }}
                 className={`group relative flex flex-col justify-between p-5 rounded-2xl border bg-gradient-to-br ${net.bgGradient} cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:shadow-2xl overflow-hidden border-slate-800/80 ${net.accentBorder}`}
               >
                 {/* Glow decorativo de fundo */}
@@ -691,6 +700,7 @@ export const LiveTvGuideView: React.FC<LiveTvGuideViewProps> = ({
         <div className="flex items-center gap-3">
           {/* BOTÃO VOLTAR PARA A ESCOLHA DE EMISSORA */}
           <button
+            data-tv-back="true"
             onClick={() => {
               setSelectedNetworkId(null);
               setSearchQuery('');
@@ -831,7 +841,16 @@ export const LiveTvGuideView: React.FC<LiveTvGuideViewProps> = ({
             return (
               <div
                 key={channel.id}
+                tabIndex={0}
+                role="button"
+                data-tv-card="true"
                 onClick={() => handleChannelClick(channel)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleChannelClick(channel);
+                  }
+                }}
                 className={`group relative flex flex-col justify-between rounded-2xl p-3 bg-[#0a1017] border cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.8)] overflow-hidden ${
                   isPlaying
                     ? 'border-cyan-400 bg-cyan-950/20 shadow-neon-cyan'
@@ -884,6 +903,7 @@ export const LiveTvGuideView: React.FC<LiveTvGuideViewProps> = ({
                     </h4>
                     <button
                       type="button"
+                      tabIndex={-1}
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleFavorite(channel.id);
@@ -938,7 +958,16 @@ export const LiveTvGuideView: React.FC<LiveTvGuideViewProps> = ({
             return (
               <div
                 key={channel.id}
+                tabIndex={0}
+                role="button"
+                data-tv-card="true"
                 onClick={() => handleChannelClick(channel)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleChannelClick(channel);
+                  }
+                }}
                 className={`group flex items-center justify-between py-3 px-3 rounded-xl cursor-pointer transition-all ${
                   isPlaying
                     ? 'bg-cyan-500/15 border border-cyan-400/50'

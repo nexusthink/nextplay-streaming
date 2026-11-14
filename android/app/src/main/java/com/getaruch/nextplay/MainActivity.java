@@ -40,4 +40,23 @@ public class MainActivity extends BridgeActivity {
             }
         }
     }
+
+    @Override
+    public void onBackPressed() {
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView webView = getBridge().getWebView();
+            webView.evaluateJavascript(
+                "(function() {" +
+                "  var backBtn = document.querySelector('[data-tv-back=\"true\"]');" +
+                "  if (backBtn) { backBtn.click(); return 'handled'; }" +
+                "  var evt = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });" +
+                "  window.dispatchEvent(evt);" +
+                "  return 'dispatched';" +
+                "})()",
+                null
+            );
+            return;
+        }
+        super.onBackPressed();
+    }
 }

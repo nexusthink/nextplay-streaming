@@ -96,8 +96,9 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
         </p>
 
         {/* Botões de Ação Netflix (Assistir Agora Branco Sólido + Minha Lista) */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3" data-tv-row="true">
           <button
+            data-tv-card="true"
             onClick={() => onPlay(channel)}
             className="flex items-center gap-2.5 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-white hover:bg-slate-200 text-slate-950 font-black text-sm shadow-[0_8px_25px_rgba(255,255,255,0.25)] transition-all transform hover:scale-105 active:scale-95"
           >
@@ -106,6 +107,7 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
           </button>
 
           <button
+            data-tv-card="true"
             onClick={() => onToggleFavorite(channel.id)}
             className={`flex items-center gap-2 px-5 py-3 sm:py-3.5 rounded-xl border backdrop-blur-md text-sm font-bold transition-all ${
               isFavorite

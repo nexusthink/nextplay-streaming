@@ -662,10 +662,21 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
               return (
                 <div
                   key={cat.id}
+                  tabIndex={0}
+                  role="button"
+                  data-tv-card="true"
                   onClick={() => {
                     setSelectedCategoryId(cat.id);
                     setSelectedGenre('all');
                     setSearchQuery('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedCategoryId(cat.id);
+                      setSelectedGenre('all');
+                      setSearchQuery('');
+                    }
                   }}
                   className={`group relative flex flex-col justify-between p-5 rounded-2xl border bg-gradient-to-br ${cat.bgGradient} cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:shadow-2xl overflow-hidden border-slate-800/80 ${cat.accentBorder}`}
                 >
@@ -721,10 +732,21 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
               {serverCategories.map((cat) => (
                 <div
                   key={cat.id}
+                  tabIndex={0}
+                  role="button"
+                  data-tv-card="true"
                   onClick={() => {
                     setSelectedCategoryId(cat.id);
                     setSelectedGenre('all');
                     setSearchQuery('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedCategoryId(cat.id);
+                      setSelectedGenre('all');
+                      setSearchQuery('');
+                    }
                   }}
                   className="group relative flex flex-col justify-between p-3.5 rounded-xl border border-slate-800/80 bg-[#0a1018] hover:bg-[#0f1722] hover:border-teal-500/60 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:shadow-lg"
                 >
@@ -771,6 +793,7 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4 shrink-0">
         <div className="flex items-center gap-3">
           <button
+            data-tv-back="true"
             onClick={() => {
               setSelectedCategoryId(null);
               setSelectedGenre('all');
@@ -910,7 +933,17 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
           return (
             <div
               key={item.id}
+              tabIndex={0}
+              role="button"
+              data-tv-card="true"
               onClick={() => (onOpenDetails ? onOpenDetails(item) : onSelectChannel(item))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  if (onOpenDetails) onOpenDetails(item);
+                  else onSelectChannel(item);
+                }
+              }}
               className={`group relative flex flex-col rounded-2xl bg-[#0a1017] border cursor-pointer transition-all duration-300 transform hover:-translate-y-2 hover:shadow-[0_16px_36px_rgba(0,0,0,0.9)] overflow-hidden ${
                 isSelected
                   ? 'border-cyan-400 bg-cyan-950/20 shadow-neon-cyan'
@@ -973,6 +1006,7 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
                 {/* Favoritar */}
                 <button
                   type="button"
+                  tabIndex={-1}
                   onClick={(e) => {
                     e.stopPropagation();
                     onToggleFavorite(item.id);

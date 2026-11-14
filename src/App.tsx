@@ -556,11 +556,11 @@ export const App: React.FC = () => {
         return;
       }
 
-      // Navegação Espacial D-Pad (Setas do Controle Remoto Android TV / TV Box / Fire Stick)
+      // Navegação Espacial D-Pad Inteligente (Controle Remoto Android TV / TV Box / Fire Stick)
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         const focusable = Array.from(
           document.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            'button:not([disabled]):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
           )
         ).filter((el) => {
           const rect = el.getBoundingClientRect();
@@ -571,7 +571,10 @@ export const App: React.FC = () => {
           const current = document.activeElement as HTMLElement | null;
           if (!current || !focusable.includes(current)) {
             e.preventDefault();
-            focusable[0].focus();
+            const firstMainCard = document.querySelector<HTMLElement>('main [data-tv-card="true"]');
+            const target = firstMainCard && focusable.includes(firstMainCard) ? firstMainCard : focusable[0];
+            target.focus({ preventScroll: true });
+            target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
             return;
           }
 
@@ -581,37 +584,153 @@ export const App: React.FC = () => {
             y: curRect.top + curRect.height / 2,
           };
 
-          let bestCandidate: HTMLElement | null = null;
-          let bestScore = Infinity;
+          // 1. Se estiver dentro de uma fileira horizontal ([data-tv-row="true"])
+          const currentRow = current.closest<HTMLElement>('[data-tv-row="true"]');
+          if (currentRow && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            const rowCards = Array.from(currentRow.querySelectorAll<HTMLElement>('[data-tv-card="true"]')).filter(
+              (el) => focusable.includes(el)
+            );
+            const idx = rowCards.indexOf(current);
+            if (idx !== -1) {
+              const nextIdx = e.key === 'ArrowRight' ? idx + 1 : idx - 1;
+              if (nextIdx >= 0 && nextIdx < rowCards.length) {
+                e.preventDefault();
+                const target = rowCards[nextIdx];
+                target.focus({ preventScroll: true });
+                target.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+              }
+              return;
+            }
+          }
 
-          for (const cand of focusable) {
-            if (cand === current) continue;
-            const r = cand.getBoundingClientRect();
-            const c = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-            const dx = c.x - curCenter.x;
-            const dy = c.y - curCenter.y;
+          // 2. Navegação Vertical entre Fileiras Horizontais ([data-tv-row="true"]) dentro do <main>
+          if (currentRow && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            const mainEl = document.querySelector('main');
+            const allRows = mainEl
+              ? Array.from(mainEl.querySelectorAll<HTMLElement>('[data-tv-row="true"]')).filter((row) =>
+                  row.querySelector('[data-tv-card="true"]')
+                )
+              : [];
+            const rowIdx = allRows.indexOf(currentRow);
+            if (rowIdx !== -1) {
+              const targetRowIdx = e.key === 'ArrowDown' ? rowIdx + 1 : rowIdx - 1;
+              if (targetRowIdx >= 0 && targetRowIdx < allRows.length) {
+                const targetRow = allRows[targetRowIdx];
+                const targetCards = Array.from(
+                  targetRow.querySelectorAll<HTMLElement>('[data-tv-card="true"]')
+                ).filter((el) => focusable.includes(el));
+                if (targetCards.length > 0) {
+                  e.preventDefault();
+                  // Escolhe o card da fileira destino mais alinhado horizontalmente com o atual
+                  let bestRowCard = targetCards[0];
+                  let minDx = Infinity;
+                  for (const tc of targetCards) {
+                    const tr = tc.getBoundingClientRect();
+                    const tcx = tr.left + tr.width / 2;
+                    const d = Math.abs(tcx - curCenter.x);
+                    if (d < minDx) {
+                      minDx = d;
+                      bestRowCard = tc;
+                    }
+                  }
+                  bestRowCard.focus({ preventScroll: true });
+                  bestRowCard.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+                  return;
+                }
+              }
+            }
+          }
 
-            if (e.key === 'ArrowRight' && dx <= 6) continue;
-            if (e.key === 'ArrowLeft' && dx >= -6) continue;
-            if (e.key === 'ArrowDown' && dy <= 6) continue;
-            if (e.key === 'ArrowUp' && dy >= -6) continue;
+          // 3. Navegação Espacial Geral (Grades Verticais de Canais/Filmes/Séries e Header <-> Main)
+          const isInMain = Boolean(current.closest('main'));
+          const isInHeader = Boolean(current.closest('header'));
 
-            const primaryDist = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? Math.abs(dx) : Math.abs(dy);
-            const crossDist = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? Math.abs(dy) : Math.abs(dx);
-            const score = primaryDist + crossDist * 2.6;
+          // Filtra candidatos prioritários para evitar que o cursor pule para fora do catálogo ao descer
+          let pool = focusable;
+          if (isInHeader && e.key === 'ArrowDown') {
+            const mainCandidates = focusable.filter((el) => Boolean(el.closest('main')));
+            if (mainCandidates.length > 0) pool = mainCandidates;
+          } else if (isInMain && e.key === 'ArrowDown') {
+            pool = focusable.filter((el) => Boolean(el.closest('main')));
+          } else if (isInMain && e.key === 'ArrowUp') {
+            const mainAbove = focusable.filter((el) => {
+              if (!el.closest('main') || el === current) return false;
+              const r = el.getBoundingClientRect();
+              return r.top + r.height / 2 < curCenter.y - 8;
+            });
+            if (mainAbove.length > 0) {
+              pool = mainAbove;
+            }
+          }
 
-            if (score < bestScore) {
-              bestScore = score;
-              bestCandidate = cand;
+          const findBestInPool = (candidates: HTMLElement[], strictRowForLR: boolean) => {
+            let best: HTMLElement | null = null;
+            let bestScore = Infinity;
+
+            for (const cand of candidates) {
+              if (cand === current) continue;
+              const r = cand.getBoundingClientRect();
+              const c = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+              const dx = c.x - curCenter.x;
+              const dy = c.y - curCenter.y;
+
+              if (e.key === 'ArrowRight' && dx <= 6) continue;
+              if (e.key === 'ArrowLeft' && dx >= -6) continue;
+              if (e.key === 'ArrowDown' && dy <= 8) continue;
+              if (e.key === 'ArrowUp' && dy >= -8) continue;
+
+              if (strictRowForLR && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                const maxH = Math.max(curRect.height, r.height) * 0.75;
+                if (Math.abs(dy) > maxH) continue;
+              }
+
+              const score =
+                e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+                  ? Math.abs(dx) + Math.abs(dy) * 3.0
+                  : Math.abs(dy) * 2.2 + Math.abs(dx) * 0.45;
+
+              if (score < bestScore) {
+                bestScore = score;
+                best = cand;
+              }
+            }
+            return best;
+          };
+
+          let bestCandidate = findBestInPool(pool, true) || findBestInPool(pool, false);
+
+          // Se estiver descendo dentro do catálogo e a próxima fileira estiver abaixo da dobra de scroll
+          if (!bestCandidate && isInMain && e.key === 'ArrowDown') {
+            const scrollContainer = current.closest<HTMLElement>('.overflow-y-auto');
+            if (scrollContainer) {
+              e.preventDefault();
+              scrollContainer.scrollBy({ top: 320, behavior: 'smooth' });
+              return;
             }
           }
 
           if (bestCandidate) {
             e.preventDefault();
-            bestCandidate.focus();
-            bestCandidate.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+            if (isInMain && e.key === 'ArrowUp' && bestCandidate.closest('header')) {
+              const scrollContainer = current.closest<HTMLElement>('.overflow-y-auto');
+              if (scrollContainer) {
+                scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+              }
+            }
+            bestCandidate.focus({ preventScroll: true });
+            bestCandidate.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
             return;
           }
+        }
+      }
+
+      // Botão Voltar (Escape / GoBack) do Controle Remoto da TV
+      if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack') {
+        const backBtn = document.querySelector<HTMLButtonElement>('[data-tv-back="true"]');
+        if (backBtn) {
+          e.preventDefault();
+          backBtn.click();
+          return;
         }
       }
 
@@ -1441,15 +1560,15 @@ export const App: React.FC = () => {
                 />
               </div>
 
-              {/* Links de Navegação Estilo Netflix / HBO */}
-              <nav className="hidden md:flex items-center gap-1 sm:gap-2 text-xs font-semibold">
+              {/* Links de Navegação Estilo Netflix / HBO (Sempre visíveis na TV, Tablet e Celular no topo) */}
+              <nav className="flex items-center gap-1 sm:gap-2 text-xs font-semibold overflow-x-auto scrollbar-none">
                 <button
                   onClick={() => {
                     setSelectedNav('all');
                     setSelectedMediaType('all');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition ${
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
                     selectedNav === 'all' && selectedMediaType === 'all'
                       ? 'bg-white text-slate-950 font-bold shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -1464,7 +1583,7 @@ export const App: React.FC = () => {
                     setSelectedMediaType('live');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1.5 shrink-0 ${
                     selectedMediaType === 'live' && selectedNav === 'all'
                       ? 'bg-white text-slate-950 font-bold shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -1480,7 +1599,7 @@ export const App: React.FC = () => {
                     setSelectedMediaType('movie');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition ${
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
                     selectedMediaType === 'movie' && selectedNav === 'all'
                       ? 'bg-white text-slate-950 font-bold shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -1495,7 +1614,7 @@ export const App: React.FC = () => {
                     setSelectedMediaType('series');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition ${
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
                     selectedMediaType === 'series' && selectedNav === 'all'
                       ? 'bg-white text-slate-950 font-bold shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -1509,7 +1628,7 @@ export const App: React.FC = () => {
                     setSelectedNav('favorites');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1 ${
+                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1 shrink-0 ${
                     selectedNav === 'favorites'
                       ? 'bg-white text-slate-950 font-bold shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -1524,7 +1643,7 @@ export const App: React.FC = () => {
                     setSelectedNav('history');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition ${
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
                     selectedNav === 'history'
                       ? 'bg-white text-slate-950 font-bold shadow-md'
                       : 'text-slate-300 hover:text-white hover:bg-white/5'
@@ -1541,9 +1660,10 @@ export const App: React.FC = () => {
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             >
               {/* Busca Rápida com Expansão Suave que Abre a OmniSearch */}
-              <div
+              <button
+                type="button"
                 onClick={() => setIsOmniSearchOpen(true)}
-                className="relative w-36 sm:w-56 md:w-64 cursor-pointer group"
+                className="relative w-32 sm:w-52 md:w-64 cursor-pointer group text-left rounded-full"
               >
                 <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-400 absolute left-3 top-1/2 -translate-y-1/2 transition" />
                 <div className="w-full pl-8 pr-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-700/60 group-hover:border-cyan-400 text-xs text-slate-400 transition flex items-center justify-between">
@@ -1552,7 +1672,7 @@ export const App: React.FC = () => {
                     /
                   </kbd>
                 </div>
-              </div>
+              </button>
 
               {/* Botão de Configurações Técnicas & Telemetria (Gear) */}
               <button
@@ -2040,77 +2160,6 @@ export const App: React.FC = () => {
                 </>
               )}
             </main>
-
-          {/* Barra Inferior Mobile Android Nativo */}
-          <nav className="lg:hidden h-14 bg-[#0c1219] border-t border-slate-800 grid grid-cols-5 items-center px-2 shrink-0 z-30">
-            <button
-              onClick={() => {
-                setSelectedNav('all');
-                setSelectedMediaType('all');
-                setSelectedCategory('ALL');
-              }}
-              className={`flex flex-col items-center justify-center py-1 text-[10px] ${
-                selectedNav === 'all' && selectedMediaType === 'all'
-                  ? 'text-cyan-400 font-bold'
-                  : 'text-slate-400'
-              }`}
-            >
-              <Home className="w-4 h-4 mb-0.5" />
-              Início
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedNav('all');
-                setSelectedMediaType('live');
-                setSelectedCategory('ALL');
-              }}
-              className={`flex flex-col items-center justify-center py-1 text-[10px] ${
-                selectedMediaType === 'live' ? 'text-cyan-400 font-bold' : 'text-slate-400'
-              }`}
-            >
-              <Tv className="w-4 h-4 mb-0.5" />
-              Ao Vivo
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedNav('all');
-                setSelectedMediaType('movie');
-                setSelectedCategory('ALL');
-              }}
-              className={`flex flex-col items-center justify-center py-1 text-[10px] ${
-                selectedMediaType === 'movie' ? 'text-purple-400 font-bold' : 'text-slate-400'
-              }`}
-            >
-              <Film className="w-4 h-4 mb-0.5" />
-              Filmes
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedNav('all');
-                setSelectedMediaType('series');
-                setSelectedCategory('ALL');
-              }}
-              className={`flex flex-col items-center justify-center py-1 text-[10px] ${
-                selectedMediaType === 'series' ? 'text-emerald-400 font-bold' : 'text-slate-400'
-              }`}
-            >
-              <Clapperboard className="w-4 h-4 mb-0.5" />
-              Séries
-            </button>
-
-            <button
-              onClick={() => setSelectedNav('favorites')}
-              className={`flex flex-col items-center justify-center py-1 text-[10px] ${
-                selectedNav === 'favorites' ? 'text-rose-400 font-bold' : 'text-slate-400'
-              }`}
-            >
-              <Heart className="w-4 h-4 mb-0.5" />
-              Favoritos
-            </button>
-          </nav>
 
           {/* Modal de Vínculo de Servidor e Login IPTV da Conta */}
           <ConnectionModal

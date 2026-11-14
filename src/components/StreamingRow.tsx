@@ -60,6 +60,7 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
       {/* Carrossel com Botões de Navegação Estilo Netflix */}
       <div className="relative">
         <button
+          tabIndex={-1}
           onClick={() => scroll('left')}
           className="absolute -left-3 top-1/2 -translate-y-1/2 z-20 w-10 h-16 sm:w-12 sm:h-20 rounded-r-2xl bg-black/85 hover:bg-black/95 text-white/80 hover:text-cyan-400 border border-slate-700/60 flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-all duration-200 backdrop-blur-md shadow-2xl"
           title="Rolar para esquerda"
@@ -69,6 +70,7 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
 
         <div
           ref={rowRef}
+          data-tv-row="true"
           className="flex items-center gap-3 sm:gap-4 overflow-x-auto scrollbar-none scroll-smooth pb-3 pt-2 px-2 custom-scrollbar"
         >
           {items.map((item) => {
@@ -79,7 +81,16 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
             return (
               <div
                 key={item.id}
+                tabIndex={0}
+                role="button"
+                data-tv-card="true"
                 onClick={() => onSelectChannel(item)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectChannel(item);
+                  }
+                }}
                 className={`group/card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 transform hover:-translate-y-2 hover:scale-[1.04] border ${
                   isPoster
                     ? 'w-32 sm:w-40 md:w-48 aspect-[2/3]'
@@ -139,6 +150,7 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
 
                   {/* Botão de Favoritar Rápido com Coração */}
                   <button
+                    tabIndex={-1}
                     onClick={(e) => {
                       e.stopPropagation();
                       onToggleFavorite(item.id);
@@ -151,8 +163,8 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
                 </div>
 
                 {/* Botão Central de Play no Hover (Animação Suave Netflix) */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity duration-200 z-10">
-                  <div className="w-12 h-12 rounded-full bg-white text-slate-950 flex items-center justify-center shadow-[0_4px_20px_rgba(255,255,255,0.4)] transform scale-90 group-hover/card:scale-100 transition-transform">
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 group-focus/card:opacity-100 transition-opacity duration-200 z-10">
+                  <div className="w-12 h-12 rounded-full bg-white text-slate-950 flex items-center justify-center shadow-[0_4px_20px_rgba(255,255,255,0.4)] transform scale-90 group-hover/card:scale-100 group-focus/card:scale-100 transition-transform">
                     <Play className="w-6 h-6 fill-slate-950 ml-0.5" />
                   </div>
                 </div>
@@ -189,6 +201,7 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
         </div>
 
         <button
+          tabIndex={-1}
           onClick={() => scroll('right')}
           className="absolute -right-3 top-1/2 -translate-y-1/2 z-20 w-10 h-16 sm:w-12 sm:h-20 rounded-l-2xl bg-black/85 hover:bg-black/95 text-white/80 hover:text-cyan-400 border border-slate-700/60 flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-all duration-200 backdrop-blur-md shadow-2xl"
           title="Rolar para direita"
