@@ -28,21 +28,63 @@ export const NetflixCatalogView: React.FC<NetflixCatalogViewProps> = ({
     return channels.filter((c) => !isAdultContent(c));
   }, [channels]);
 
-  // Escolhe o item em destaque para o Hero Banner (apenas Filmes e Séries cinematográficos não adultos)
-  const featuredItem = useMemo(() => {
-    // 1. Prioriza filme ou série ativo
-    if (activeChannelId) {
-      const active = safeChannels.find(
-        (c) => c.id === activeChannelId && c.mediaType !== 'live'
-      );
-      if (active) return active;
-    }
-    // 2. Ou o primeiro filme/série com imagem de destaque
-    const topVOD = safeChannels.find(
-      (c) => (c.mediaType === 'movie' || c.mediaType === 'series') && c.logo
+  // Monta um Rolo de Destaques Dinâmico intercalando Filmes e Séries (10 títulos variados)
+  const featuredList = useMemo(() => {
+    const vodWithImage = safeChannels.filter(
+      (c) =>
+        (c.mediaType === 'movie' || c.mediaType === 'series') &&
+        Boolean(c.backdropUrl || c.logo)
     );
-    return topVOD || null;
-  }, [safeChannels, activeChannelId]);
+    if (vodWithImage.length === 0) return [];
+
+    // Pontua títulos recentes (2024/2025/2026) ou com boa nota/sinopse para destacar o melhor do catálogo
+    const scoreItem = (c: ChannelItem) => {
+      let score = 0;
+      const text = `${c.name} ${c.group || ''} ${c.year || ''}`;
+      if (/2026|2025|2024|lançamento|lancamento|destaque|top/i.test(text)) score += 30;
+      else if (/2023|2022|4k|uhd/i.test(text)) score += 15;
+      if (c.backdropUrl) score += 20;
+      if (c.plot && c.plot.length > 30) score += 15;
+      const numRating = parseFloat(String(c.rating || '0').replace(',', '.'));
+      if (Number.isFinite(numRating) && numRating >= 7) score += numRating * 2;
+      return score;
+    };
+
+    const moviesPool = vodWithImage
+      .filter((c) => c.mediaType === 'movie')
+      .sort((a, b) => scoreItem(b) - scoreItem(a));
+    const seriesPool = vodWithImage
+      .filter((c) => c.mediaType === 'series')
+      .sort((a, b) => scoreItem(b) - scoreItem(a));
+
+    // Seleciona títulos de grupos variados intercalando 1 Filme e 1 Série
+    const selected: ChannelItem[] = [];
+    const usedIds = new Set<string>();
+    const groupCounts = new Map<string, number>();
+
+    const pickNextFromPool = (pool: ChannelItem[]) => {
+      for (const item of pool) {
+        if (usedIds.has(item.id)) continue;
+        const grp = item.group || 'Geral';
+        if ((groupCounts.get(grp) || 0) >= 2 && pool.length > 20) continue;
+        usedIds.add(item.id);
+        groupCounts.set(grp, (groupCounts.get(grp) || 0) + 1);
+        selected.push(item);
+        return;
+      }
+    };
+
+    for (let i = 0; i < 8 && selected.length < 10; i++) {
+      if (moviesPool.length > 0) pickNextFromPool(moviesPool);
+      if (selected.length < 10 && seriesPool.length > 0) pickNextFromPool(seriesPool);
+    }
+
+    if (selected.length === 0) {
+      return vodWithImage.slice(0, 8);
+    }
+
+    return selected;
+  }, [safeChannels]);
 
   // Fileiras Organizadas Estilo Streaming
   const {
@@ -105,11 +147,11 @@ export const NetflixCatalogView: React.FC<NetflixCatalogViewProps> = ({
 
   return (
     <div className="w-full h-full overflow-y-auto pr-1 pb-12 custom-scrollbar">
-      {/* 1. HERO BANNER EM DESTAQUE (Apenas para Filmes / Séries com visual de cinema) */}
-      {featuredItem && (
+      {/* 1. ROLO DE DESTAQUES AUTOMÁTICO (Filmes & Séries em Rotação) */}
+      {featuredList.length > 0 && (
         <StreamingHeroBanner
-          channel={featuredItem}
-          isFavorite={favorites.has(featuredItem.id)}
+          items={featuredList}
+          favorites={favorites}
           onPlay={onSelectChannel}
           onToggleFavorite={onToggleFavorite}
         />

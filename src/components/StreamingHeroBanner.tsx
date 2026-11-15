@@ -1,10 +1,21 @@
-import React from 'react';
-import { Play, Heart, Star, Sparkles, Film, Clapperboard, Radio } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Play,
+  Heart,
+  Star,
+  Sparkles,
+  ChevronLeft,
+  ChevronRight,
+  Film,
+  Layers,
+} from 'lucide-react';
 import { ChannelItem } from '../types/iptv';
 
 interface StreamingHeroBannerProps {
-  channel: ChannelItem | null;
-  isFavorite: boolean;
+  items?: ChannelItem[];
+  channel?: ChannelItem | null;
+  favorites?: Set<string>;
+  isFavorite?: boolean;
   onPlay: (channel: ChannelItem) => void;
   onToggleFavorite: (channelId: string) => void;
 }
@@ -21,63 +32,146 @@ const cleanTitle = (rawName: string) => {
 };
 
 export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
+  items,
   channel,
-  isFavorite,
+  favorites,
+  isFavorite = false,
   onPlay,
   onToggleFavorite,
 }) => {
-  if (!channel) return null;
+  const bannerItems = React.useMemo(() => {
+    if (items && items.length > 0) return items;
+    if (channel) return [channel];
+    return [];
+  }, [items, channel]);
 
-  const bgImage = channel.backdropUrl || channel.logo;
-  const displayName = cleanTitle(channel.name) || channel.name;
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+
+  // Reseta o índice caso a lista mude de tamanho drasticamente
+  useEffect(() => {
+    if (currentIndex >= bannerItems.length) {
+      setCurrentIndex(0);
+    }
+  }, [bannerItems.length, currentIndex]);
+
+  const handleNext = useCallback(() => {
+    if (bannerItems.length <= 1) return;
+    setCurrentIndex((prev) => (prev + 1) % bannerItems.length);
+  }, [bannerItems.length]);
+
+  const handlePrev = useCallback(() => {
+    if (bannerItems.length <= 1) return;
+    setCurrentIndex((prev) => (prev - 1 + bannerItems.length) % bannerItems.length);
+  }, [bannerItems.length]);
+
+  // Rolo Automático de Destaques: gira a cada 6 segundos quando não está pausado
+  useEffect(() => {
+    if (bannerItems.length <= 1 || isPaused) return;
+    const timer = window.setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % bannerItems.length);
+    }, 6000);
+    return () => window.clearInterval(timer);
+  }, [bannerItems.length, isPaused]);
+
+  const activeItem = bannerItems[currentIndex] || bannerItems[0];
+  if (!activeItem) return null;
+
+  const bgImage = activeItem.backdropUrl || activeItem.logo;
+  const displayName = cleanTitle(activeItem.name) || activeItem.name;
+  const currentIsFavorite = favorites ? favorites.has(activeItem.id) : isFavorite;
+  const isSeries = activeItem.mediaType === 'series';
 
   return (
-    <div className="relative w-full h-[360px] sm:h-[440px] md:h-[500px] lg:h-[540px] rounded-3xl overflow-hidden shadow-2xl mb-6 border border-slate-800/60 group select-none">
-      {/* Imagem de Fundo / Backdrop Cinematográfico em Alta Resolução */}
+    <div
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onFocusCapture={() => setIsPaused(true)}
+      onBlurCapture={() => setIsPaused(false)}
+      className="relative w-full h-[360px] sm:h-[440px] md:h-[500px] lg:h-[540px] rounded-3xl overflow-hidden shadow-2xl mb-6 border border-slate-800/60 group select-none bg-[#070b10]"
+    >
+      {/* Imagem de Fundo / Backdrop do Destaque Atual */}
       {bgImage ? (
         <img
+          key={activeItem.id}
           src={bgImage}
-          alt={channel.name}
-          className="w-full h-full object-cover object-center transform group-hover:scale-105 transition-transform duration-1000 filter brightness-90"
+          alt={activeItem.name}
+          className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-90"
         />
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-[#070b10] via-[#0d1622] to-[#070b10]" />
       )}
 
       {/* Gradientes Múltiplos Estilo Netflix (Vignette Escura para leitura impecável) */}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#090d11] via-[#090d11]/70 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#090d11] via-[#090d11]/65 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-r from-[#090d11] via-[#090d11]/85 to-transparent w-full md:w-3/4" />
       <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-[#090d11]/80 to-transparent" />
 
-      {/* Conteúdo em Destaque */}
+      {/* Setas Laterais do Rolo de Destaques (Esquerda / Direita) */}
+      {bannerItems.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={handlePrev}
+            title="Destaque Anterior"
+            className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/50 hover:bg-black/80 border border-white/15 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleNext}
+            title="Próximo Destaque"
+            className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-black/50 hover:bg-black/80 border border-white/15 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </>
+      )}
+
+      {/* Conteúdo Principal do Destaque */}
       <div className="absolute inset-0 p-6 sm:p-10 md:p-12 flex flex-col justify-end max-w-2xl z-10">
         {/* Badges de Categoria & Especificações Técnicas Limpas */}
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="px-2.5 py-1 rounded-md text-[10px] font-black tracking-widest uppercase bg-cyan-500 text-slate-950 shadow-neon-cyan flex items-center gap-1">
-            <Sparkles className="w-3 h-3 fill-slate-950" />
-            {channel.mediaType === 'movie'
-              ? 'FILME EM DESTAQUE'
-              : channel.mediaType === 'series'
-              ? 'SÉRIE POPULAR'
-              : 'TRANSMISSÃO AO VIVO'}
+          <span
+            className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-widest uppercase flex items-center gap-1 shadow-md ${
+              isSeries
+                ? 'bg-emerald-400 text-slate-950'
+                : 'bg-cyan-400 text-slate-950'
+            }`}
+          >
+            {isSeries ? (
+              <>
+                <Layers className="w-3 h-3" />
+                SÉRIE EM DESTAQUE
+              </>
+            ) : (
+              <>
+                <Film className="w-3 h-3" />
+                FILME EM DESTAQUE
+              </>
+            )}
           </span>
 
-          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white/10 text-slate-200 backdrop-blur-md border border-white/10">
-            {channel.group || 'Geral'}
+          {bannerItems.length > 1 && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-black/60 text-slate-300 border border-white/15">
+              {currentIndex + 1} / {bannerItems.length}
+            </span>
+          )}
+
+          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white/10 text-slate-200 border border-white/10">
+            {activeItem.group || 'Destaque'}
           </span>
 
           <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-cyan-300 border border-cyan-400/30">
             4K ULTRA HD
           </span>
 
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-slate-300 border border-white/15">
-            5.1 SURROUND
-          </span>
-
-          {channel.rating && (
+          {activeItem.rating && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[11px] font-bold border border-amber-400/40">
               <Star className="w-3 h-3 fill-amber-400" />
-              {channel.rating}
+              {activeItem.rating}
             </span>
           )}
         </div>
@@ -87,40 +181,66 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
           {displayName}
         </h1>
 
-        {/* Sinopse / EPG */}
+        {/* Sinopse / Prólogo */}
         <p className="text-xs sm:text-sm text-slate-300/90 line-clamp-2 sm:line-clamp-3 mb-6 leading-relaxed font-medium drop-shadow-md max-w-xl">
-          {channel.plot ||
-            (channel.epgCurrent
-              ? `Agora transmitindo: ${channel.epgCurrent.title} (${channel.epgCurrent.start} - ${channel.epgCurrent.end})`
-              : 'Aproveite a melhor transmissão em ultra definição com som cinematográfico, cores vívidas e buffer express zero delay.')}
+          {activeItem.plot ||
+            (activeItem.epgCurrent
+              ? `Agora transmitindo: ${activeItem.epgCurrent.title} (${activeItem.epgCurrent.start} - ${activeItem.epgCurrent.end})`
+              : isSeries
+              ? 'Assista a todas as temporadas e episódios desta série em alta definição com reprodução instantânea.'
+              : 'Aproveite a melhor transmissão em ultra definição com som cinematográfico, cores vívidas e abertura imediata em tela cheia.')}
         </p>
 
-        {/* Botões de Ação Netflix (Assistir Agora Branco Sólido + Minha Lista) */}
+        {/* Botões de Ação (Assistir Agora + Minha Lista) */}
         <div className="flex items-center gap-3" data-tv-row="true">
           <button
             data-tv-card="true"
-            onClick={() => onPlay(channel)}
-            className="flex items-center gap-2.5 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-white hover:bg-slate-200 text-slate-950 font-black text-sm shadow-[0_8px_25px_rgba(255,255,255,0.25)] transition-all transform hover:scale-105 active:scale-95"
+            onClick={() => onPlay(activeItem)}
+            className="flex items-center gap-2.5 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-white hover:bg-slate-200 focus:bg-emerald-400 text-slate-950 font-black text-sm shadow-[0_8px_25px_rgba(255,255,255,0.25)] transition-all cursor-pointer"
           >
             <Play className="w-5 h-5 fill-slate-950" />
-            Assistir Agora
+            <span>Assistir Agora</span>
           </button>
 
           <button
             data-tv-card="true"
-            onClick={() => onToggleFavorite(channel.id)}
-            className={`flex items-center gap-2 px-5 py-3 sm:py-3.5 rounded-xl border backdrop-blur-md text-sm font-bold transition-all ${
-              isFavorite
+            onClick={() => onToggleFavorite(activeItem.id)}
+            className={`flex items-center gap-2 px-5 py-3 sm:py-3.5 rounded-xl border text-sm font-bold transition-all cursor-pointer ${
+              currentIsFavorite
                 ? 'bg-rose-500/20 border-rose-500/60 text-rose-300 hover:bg-rose-500/30'
-                : 'bg-slate-900/60 hover:bg-slate-800/80 border-white/20 text-white'
+                : 'bg-slate-900/75 hover:bg-slate-800 border-white/20 text-white'
             }`}
           >
-            <Heart className={`w-4 h-4 ${isFavorite ? 'fill-rose-500 text-rose-500' : ''}`} />
-            {isFavorite ? 'Salvo' : 'Minha Lista'}
+            <Heart
+              className={`w-4 h-4 ${currentIsFavorite ? 'fill-rose-500 text-rose-500' : ''}`}
+            />
+            <span>{currentIsFavorite ? 'Salvo' : 'Minha Lista'}</span>
           </button>
         </div>
       </div>
+
+      {/* Indicadores do Rolo de Destaques (Canto Inferior Direito) */}
+      {bannerItems.length > 1 && (
+        <div className="absolute bottom-5 right-6 z-20 hidden sm:flex items-center gap-2 bg-black/50 px-3 py-2 rounded-full border border-white/10">
+          <Sparkles className="w-3.5 h-3.5 text-cyan-400 mr-1" />
+          {bannerItems.map((item, idx) => {
+            const isActive = idx === currentIndex;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setCurrentIndex(idx)}
+                title={cleanTitle(item.name)}
+                className={`h-2 rounded-full transition-all cursor-pointer ${
+                  isActive
+                    ? 'w-7 bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]'
+                    : 'w-2 bg-white/30 hover:bg-white/60'
+                }`}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
-

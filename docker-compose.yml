@@ -3,6 +3,8 @@
 # Container Isolado: nextplay-web (Não conflita com gorango-web nem outros apps)
 # ==============================================================================
 
+name: nextplay
+
 services:
   nextplay-web:
     container_name: nextplay-web
