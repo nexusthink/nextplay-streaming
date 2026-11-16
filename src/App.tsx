@@ -151,11 +151,8 @@ export const App: React.FC = () => {
   const [isAutoConnecting, setIsAutoConnecting] = useState<boolean>(false);
   const [autoConnectError, setAutoConnectError] = useState<string | null>(null);
 
-  // Ajustes de Imagem e Transmissão (Super Resolução Upscaling, Zero Delay e Áudio Inteligente)
-  const [upscaling, setUpscaling] = useState<UpscalingMode>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.UPSCALING);
-    return saved === 'hd' || saved === '4k' ? saved : 'hd';
-  });
+  // Ajustes de Imagem e Transmissão (Super Resolução Upscaling desativado por padrão para Decodificação 100% Hardware na TV)
+  const [upscaling, setUpscaling] = useState<UpscalingMode>('off');
   const [zeroDelay, setZeroDelay] = useState<ZeroDelayMode>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ZERO_DELAY);
     return saved === 'off' || saved === 'agressivo' ? saved : 'equilibrado';
@@ -165,8 +162,8 @@ export const App: React.FC = () => {
   });
 
   useEffect(() => {
-    document.documentElement.dataset.upscaling = upscaling;
-    localStorage.setItem(STORAGE_KEYS.UPSCALING, upscaling);
+    delete document.documentElement.dataset.upscaling;
+    localStorage.setItem(STORAGE_KEYS.UPSCALING, 'off');
   }, [upscaling]);
 
   useEffect(() => {
@@ -1538,31 +1535,6 @@ export const App: React.FC = () => {
 
   return (
     <>
-      {/* Filtros SVG de Super Resolução (Upscaling HD → Full HD e Full HD → 4K idênticos ao Saimo TV) */}
-      <svg
-        width="0"
-        height="0"
-        style={{ position: 'absolute', pointerEvents: 'none' }}
-        aria-hidden="true"
-      >
-        <defs>
-          <filter id="saimo-upscale-hd" colorInterpolationFilters="sRGB">
-            <feConvolveMatrix
-              order="3"
-              kernelMatrix="0 -0.45 0 -0.45 2.8 -0.45 0 -0.45 0"
-              preserveAlpha="true"
-            />
-          </filter>
-          <filter id="saimo-upscale-4k" colorInterpolationFilters="sRGB">
-            <feConvolveMatrix
-              order="3"
-              kernelMatrix="-0.15 -0.55 -0.15 -0.55 3.8 -0.55 -0.15 -0.55 -0.15"
-              preserveAlpha="true"
-            />
-          </filter>
-        </defs>
-      </svg>
-
       {/* Abertura Cinematográfica Estilo Saimo TV / NextPlay */}
       {showIntro && <NextPlayIntroAnimation onFinish={() => setShowIntro(false)} />}
 
@@ -1978,8 +1950,8 @@ export const App: React.FC = () => {
 
           {/* Área Principal 100% Edge-to-Edge */}
           <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-            {/* Player Direto em Tela Cheia quando o usuário reproduz qualquer canal, filme ou episódio */}
-            {activeChannel && (
+            {/* Player Direto em Tela Cheia: Quando ativo, desmonta o catálogo de fundo para dedicar 100% da GPU e RAM ao vídeo */}
+            {activeChannel ? (
               <VideoPlayerEngine
                 channel={activeChannel}
                 playlistChannels={channels}
@@ -2001,74 +1973,76 @@ export const App: React.FC = () => {
                 seriesDetails={activeSeriesDetails}
                 onSelectEpisode={handleSelectEpisode}
               />
-            )}
-
-            {selectedNav === 'history' && (
-              <HistoryManagerPanel history={history} onClear={handleClearHistory} />
-            )}
-
-            {/* Quando estiver na aba TV AO VIVO, exibe a Grade Inteligente Separada por Emissoras */}
-            {selectedMediaType === 'live' ? (
-              <div className="flex-1 min-h-0">
-                <LiveTvGuideView
-                  channels={channels.filter((c) => c.mediaType === 'live')}
-                  favorites={favorites}
-                  activeChannelId={activeChannel?.id}
-                  isParentalUnlocked={isParentalUnlocked}
-                  onRequestParentalUnlock={handleRequestParentalUnlock}
-                  onSelectChannel={handleSelectChannel}
-                  onToggleFavorite={handleToggleFavorite}
-                />
-              </div>
-            ) : selectedMediaType === 'movie' ? (
-              /* Quando estiver na aba FILMES, exibe o Catálogo On Demand Vertical por Fornecedoras & Gêneros */
-              <div className="flex-1 min-h-0">
-                <OnDemandCatalogView
-                  mediaType="movie"
-                  channels={channels.filter((c) => c.mediaType === 'movie')}
-                  favorites={favorites}
-                  activeChannelId={activeChannel?.id}
-                  onSelectChannel={handleOpenMediaDetails}
-                  onOpenDetails={handleOpenMediaDetails}
-                  onToggleFavorite={handleToggleFavorite}
-                />
-              </div>
-            ) : selectedMediaType === 'series' ? (
-              /* Quando estiver na aba SÉRIES, exibe o Catálogo On Demand Vertical de Séries */
-              <div className="flex-1 min-h-0">
-                <OnDemandCatalogView
-                  mediaType="series"
-                  channels={channels.filter((c) => c.mediaType === 'series')}
-                  favorites={favorites}
-                  activeChannelId={activeChannel?.id}
-                  onSelectChannel={handleOpenMediaDetails}
-                  onOpenDetails={handleOpenMediaDetails}
-                  onToggleFavorite={handleToggleFavorite}
-                />
-              </div>
             ) : (
-              <div className="flex-1 min-h-0">
-                {catalogLayout === 'netflix' ? (
-                  <NetflixCatalogView
-                    channels={filteredChannels}
-                    history={history}
-                    favorites={favorites}
-                    activeChannelId={activeChannel?.id}
-                    onSelectChannel={handleOpenMediaDetails}
-                    onToggleFavorite={handleToggleFavorite}
-                    selectedMediaType={selectedMediaType}
-                  />
-                ) : (
-                  <VirtualChannelCatalog
-                    channels={filteredChannels}
-                    activeChannelId={activeChannel?.id}
-                    activeSeriesId={activeSeriesDetails?.seriesId || activeChannel?.seriesId}
-                    favorites={favorites}
-                    onSelectChannel={handleOpenMediaDetails}
-                    onToggleFavorite={handleToggleFavorite}
-                  />
+              <>
+                {selectedNav === 'history' && (
+                  <HistoryManagerPanel history={history} onClear={handleClearHistory} />
                 )}
-              </div>
+
+                {/* Quando estiver na aba TV AO VIVO, exibe a Grade Inteligente Separada por Emissoras */}
+                {selectedMediaType === 'live' ? (
+                  <div className="flex-1 min-h-0">
+                    <LiveTvGuideView
+                      channels={channels.filter((c) => c.mediaType === 'live')}
+                      favorites={favorites}
+                      activeChannelId={undefined}
+                      isParentalUnlocked={isParentalUnlocked}
+                      onRequestParentalUnlock={handleRequestParentalUnlock}
+                      onSelectChannel={handleSelectChannel}
+                      onToggleFavorite={handleToggleFavorite}
+                    />
+                  </div>
+                ) : selectedMediaType === 'movie' ? (
+                  /* Quando estiver na aba FILMES, exibe o Catálogo On Demand Vertical por Fornecedoras & Gêneros */
+                  <div className="flex-1 min-h-0">
+                    <OnDemandCatalogView
+                      mediaType="movie"
+                      channels={channels.filter((c) => c.mediaType === 'movie')}
+                      favorites={favorites}
+                      activeChannelId={undefined}
+                      onSelectChannel={handleOpenMediaDetails}
+                      onOpenDetails={handleOpenMediaDetails}
+                      onToggleFavorite={handleToggleFavorite}
+                    />
+                  </div>
+                ) : selectedMediaType === 'series' ? (
+                  /* Quando estiver na aba SÉRIES, exibe o Catálogo On Demand Vertical de Séries */
+                  <div className="flex-1 min-h-0">
+                    <OnDemandCatalogView
+                      mediaType="series"
+                      channels={channels.filter((c) => c.mediaType === 'series')}
+                      favorites={favorites}
+                      activeChannelId={undefined}
+                      onSelectChannel={handleOpenMediaDetails}
+                      onOpenDetails={handleOpenMediaDetails}
+                      onToggleFavorite={handleToggleFavorite}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 min-h-0">
+                    {catalogLayout === 'netflix' ? (
+                      <NetflixCatalogView
+                        channels={filteredChannels}
+                        history={history}
+                        favorites={favorites}
+                        activeChannelId={undefined}
+                        onSelectChannel={handleOpenMediaDetails}
+                        onToggleFavorite={handleToggleFavorite}
+                        selectedMediaType={selectedMediaType}
+                      />
+                    ) : (
+                      <VirtualChannelCatalog
+                        channels={filteredChannels}
+                        activeChannelId={undefined}
+                        activeSeriesId={activeSeriesDetails?.seriesId}
+                        favorites={favorites}
+                        onSelectChannel={handleOpenMediaDetails}
+                        onToggleFavorite={handleToggleFavorite}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </main>
 

@@ -10,13 +10,10 @@
   }
 }
 
-/* Filtros Super Resolução (Upscaling HD -> Full HD e Full HD -> 4K idênticos ao Saimo TV) */
-html[data-upscaling="hd"] video {
-  filter: url(#saimo-upscale-hd) contrast(1.02) saturate(1.03);
-}
-
-html[data-upscaling="4k"] video {
-  filter: url(#saimo-upscale-4k) contrast(1.04) saturate(1.05);
+/* Vídeo 100% Nativo via Decodificador de Hardware (Zero filtros CSS/SVG para máxima fluidez 60fps na TV) */
+video {
+  filter: none !important;
+  will-change: auto;
 }
 
 /* Oculta o renderizador nativo de Closed Caption CEA-608 do navegador (que trava no canto esquerdo)

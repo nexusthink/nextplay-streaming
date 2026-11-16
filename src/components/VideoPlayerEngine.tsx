@@ -117,6 +117,12 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
   }, [channel?.id, initialProgressSeconds]);
 
   const wakeUpControls = useCallback(() => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime || 0);
+      if (videoRef.current.duration && Number.isFinite(videoRef.current.duration)) {
+        setDuration(videoRef.current.duration);
+      }
+    }
     setControlsVisible(true);
     if (hideControlsTimerRef.current) {
       window.clearTimeout(hideControlsTimerRef.current);
@@ -285,6 +291,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
       if (isHlsStream && Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
+          capLevelToPlayerSize: true,
           lowLatencyMode: false,
           maxBufferLength: 30,
           maxMaxBufferLength: 60,
@@ -550,23 +557,21 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
         onTimeUpdate={(e) => {
           const v = e.currentTarget;
           const now = v.currentTime || 0;
-          if (Math.abs(now - lastReportedTimeRef.current) >= 1) {
+          if (controlsVisible && Math.abs(now - currentTime) >= 1) {
             setCurrentTime(now);
             if (v.duration && Number.isFinite(v.duration)) {
               setDuration(v.duration);
             }
-            if (
-              onProgressUpdate &&
-              channel &&
-              (channel.mediaType === 'movie' || channel.mediaType === 'series') &&
-              Math.abs(now - lastReportedTimeRef.current) >= 5 &&
-              v.duration > 30
-            ) {
-              lastReportedTimeRef.current = now;
-              onProgressUpdate(channel.id, now, v.duration);
-            } else if (Math.abs(now - lastReportedTimeRef.current) >= 1) {
-              lastReportedTimeRef.current = now;
-            }
+          }
+          if (
+            onProgressUpdate &&
+            channel &&
+            (channel.mediaType === 'movie' || channel.mediaType === 'series') &&
+            Math.abs(now - lastReportedTimeRef.current) >= 10 &&
+            v.duration > 30
+          ) {
+            lastReportedTimeRef.current = now;
+            onProgressUpdate(channel.id, now, v.duration);
           }
         }}
         onLoadedMetadata={(e) => {
