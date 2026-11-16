@@ -1762,6 +1762,7 @@ export const App: React.FC = () => {
                 <button
                   onClick={() => {
                     setSelectedNav('favorites');
+                    setSelectedMediaType('all');
                     setSelectedCategory('ALL');
                   }}
                   className={`px-3 py-1.5 rounded-full transition flex items-center gap-1 shrink-0 ${
@@ -1777,6 +1778,7 @@ export const App: React.FC = () => {
                 <button
                   onClick={() => {
                     setSelectedNav('history');
+                    setSelectedMediaType('all');
                     setSelectedCategory('ALL');
                   }}
                   className={`px-3 py-1.5 rounded-full transition shrink-0 ${
@@ -2058,12 +2060,205 @@ export const App: React.FC = () => {
                 seriesDetails={activeSeriesDetails}
                 onSelectEpisode={handleSelectEpisode}
               />
+            ) : selectedNav === 'favorites' ? (
+              /* ABA MINHA LISTA (FAVORITOS) */
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-5 space-y-5 custom-scrollbar">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                      <Heart className="w-4 h-4 fill-rose-500" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg sm:text-xl font-extrabold text-white">
+                        Minha Lista ({filteredChannels.length})
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Seus canais, filmes e séries favoritados neste perfil
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredChannels.length === 0 ? (
+                  <div className="p-12 rounded-2xl bg-[#090d14] border border-slate-800 text-center max-w-md mx-auto my-8 space-y-3">
+                    <Heart className="w-10 h-10 text-rose-500/50 mx-auto" />
+                    <h3 className="text-base font-bold text-white">Sua lista está vazia</h3>
+                    <p className="text-xs text-slate-400">
+                      Adicione canais, filmes ou séries clicando no botão Favoritar para acessá-los rapidamente aqui.
+                    </p>
+                    <button
+                      type="button"
+                      data-tv-card="true"
+                      onClick={() => {
+                        setSelectedNav('all');
+                        setSelectedMediaType('all');
+                      }}
+                      className="mt-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs cursor-pointer"
+                    >
+                      Explorar Catálogo
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 sm:gap-4 pb-8">
+                    {filteredChannels.map((item) => (
+                      <div
+                        key={item.id}
+                        tabIndex={0}
+                        role="button"
+                        data-tv-card="true"
+                        onClick={() => handleOpenMediaDetails(item)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleOpenMediaDetails(item);
+                          }
+                        }}
+                        className="group relative flex flex-col rounded-xl bg-black border border-slate-800/80 hover:border-cyan-500/60 cursor-pointer overflow-hidden"
+                      >
+                        <div className="relative w-full aspect-[2/3] bg-black overflow-hidden flex items-center justify-center">
+                          {item.logo ? (
+                            <img
+                              src={item.logo}
+                              alt={item.name}
+                              loading="lazy"
+                              decoding="async"
+                              className="w-full h-full object-cover bg-black"
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-3 text-center">
+                              <Film className="w-8 h-8 text-slate-700 mb-1.5" />
+                              <span className="text-[10px] text-slate-400 line-clamp-2">
+                                {item.name}
+                              </span>
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
+                          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/85 text-[9px] font-bold uppercase text-cyan-300 border border-slate-700">
+                            {item.mediaType === 'live'
+                              ? 'TV'
+                              : item.mediaType === 'movie'
+                              ? 'Filme'
+                              : 'Série'}
+                          </span>
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleFavorite(item.id);
+                            }}
+                            title="Remover da Minha Lista"
+                            className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/85 text-rose-500 hover:bg-rose-500/20"
+                          >
+                            <Heart className="w-3.5 h-3.5 fill-rose-500" />
+                          </button>
+                        </div>
+                        <div className="p-2.5">
+                          <h4 className="text-xs font-bold text-white truncate">{item.name}</h4>
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5">{item.group}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : selectedNav === 'history' ? (
+              /* ABA HISTÓRICO DE REPRODUÇÃO */
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-5 space-y-5 custom-scrollbar">
+                <HistoryManagerPanel history={history} onClear={handleClearHistory} />
+
+                {history.length === 0 ? (
+                  <div className="p-12 rounded-2xl bg-[#090d14] border border-slate-800 text-center max-w-md mx-auto my-8 space-y-3">
+                    <History className="w-10 h-10 text-cyan-400/50 mx-auto" />
+                    <h3 className="text-base font-bold text-white">Nenhum item no histórico</h3>
+                    <p className="text-xs text-slate-400">
+                      Os canais, filmes e séries que você assistir aparecerão aqui automaticamente para você continuar de onde parou.
+                    </p>
+                    <button
+                      type="button"
+                      data-tv-card="true"
+                      onClick={() => {
+                        setSelectedNav('all');
+                        setSelectedMediaType('all');
+                      }}
+                      className="mt-2 px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs cursor-pointer"
+                    >
+                      Ir para o Catálogo
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 sm:gap-4 pb-8">
+                    {history.map((hItem) => {
+                      const item = hItem.channel;
+                      const pct =
+                        hItem.durationSeconds && hItem.durationSeconds > 0 && hItem.progressSeconds
+                          ? Math.min(100, Math.round((hItem.progressSeconds / hItem.durationSeconds) * 100))
+                          : 0;
+                      return (
+                        <div
+                          key={`${item.id}-${hItem.lastWatchedAt}`}
+                          tabIndex={0}
+                          role="button"
+                          data-tv-card="true"
+                          onClick={() => handleOpenMediaDetails(item)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleOpenMediaDetails(item);
+                            }
+                          }}
+                          className="group relative flex flex-col rounded-xl bg-black border border-slate-800/80 hover:border-cyan-500/60 cursor-pointer overflow-hidden"
+                        >
+                          <div className="relative w-full aspect-[2/3] bg-black overflow-hidden flex items-center justify-center">
+                            {item.logo ? (
+                              <img
+                                src={item.logo}
+                                alt={item.name}
+                                loading="lazy"
+                                decoding="async"
+                                className="w-full h-full object-cover bg-black"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center p-3 text-center">
+                                <Film className="w-8 h-8 text-slate-700 mb-1.5" />
+                                <span className="text-[10px] text-slate-400 line-clamp-2">
+                                  {item.name}
+                                </span>
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
+                            <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/85 text-[9px] font-bold uppercase text-emerald-300 border border-slate-700">
+                              {item.mediaType === 'live'
+                                ? 'TV'
+                                : item.mediaType === 'movie'
+                                ? 'Filme'
+                                : 'Série'}
+                            </span>
+                            {pct > 0 && (
+                              <div className="absolute bottom-0 inset-x-0 h-1.5 bg-white/20">
+                                <div
+                                  className="h-full bg-emerald-400"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-2.5">
+                            <h4 className="text-xs font-bold text-white truncate">{item.name}</h4>
+                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                              {hItem.progressSeconds && hItem.progressSeconds > 30
+                                ? `Parou em ${Math.floor(hItem.progressSeconds / 60)} min`
+                                : item.group}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             ) : (
               <>
-                {selectedNav === 'history' && (
-                  <HistoryManagerPanel history={history} onClear={handleClearHistory} />
-                )}
-
                 {/* Quando estiver na aba TV AO VIVO, exibe a Grade Inteligente Separada por Emissoras */}
                 {selectedMediaType === 'live' ? (
                   <div className="flex-1 min-h-0">
