@@ -13,6 +13,8 @@ import {
   RefreshCw,
   Check,
   X,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { ChannelItem, SeriesDetails, SeriesEpisode } from '../types/iptv';
 
@@ -88,6 +90,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
   // Painel de Episódios (Exclusivo para Séries dentro do Player)
   const [showEpisodesDrawer, setShowEpisodesDrawer] = useState(false);
   const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number>(1);
+  const [isFullExpanded, setIsFullExpanded] = useState(false);
 
   const onToggleProxyRef = useRef(onToggleProxyBuffer);
   useEffect(() => {
@@ -132,6 +135,53 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
       setControlsVisible(false);
       setShowQualityMenu(false);
     }, 4000);
+  }, []);
+
+  const toggleFullExpand = useCallback(() => {
+    setIsFullExpanded((prev) => {
+      const next = !prev;
+      try {
+        (window as any).NextPlayNative?.setFullScreen?.(next, next);
+      } catch {
+        // ignore
+      }
+      try {
+        if (next) {
+          const el = containerRef.current as any;
+          if (el && !document.fullscreenElement) {
+            if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+          }
+          if ((screen as any).orientation?.lock) {
+            (screen as any).orientation.lock('landscape').catch(() => {});
+          }
+        } else {
+          if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          }
+          if ((screen as any).orientation?.unlock) {
+            (screen as any).orientation.unlock();
+          }
+        }
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    wakeUpControls();
+  }, [wakeUpControls]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        (window as any).NextPlayNative?.setFullScreen?.(false, false);
+        if ((screen as any).orientation?.unlock) {
+          (screen as any).orientation.unlock();
+        }
+      } catch {
+        // ignore
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -551,7 +601,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
       <video
         ref={videoRef}
         poster="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs="
-        className="w-full h-full object-contain bg-black"
+        className={`w-full h-full bg-black ${isFullExpanded ? 'object-cover' : 'object-contain'}`}
         playsInline
         autoPlay
         onLoadedData={() => setHasVideoFrame(true)}
@@ -864,6 +914,26 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Botão Maximizar / Minimizar Tela Full Cheia (Ideal para Celular e Tablet) */}
+              <button
+                type="button"
+                onClick={toggleFullExpand}
+                title={isFullExpanded ? 'Restaurar Tela' : 'Maximizar Tela Full Cheia'}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 focus:bg-emerald-500 focus:text-slate-950 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer"
+              >
+                {isFullExpanded ? (
+                  <>
+                    <Minimize2 className="w-4 h-4" />
+                    <span>Minimizar</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-4 h-4" />
+                    <span>Tela Cheia</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

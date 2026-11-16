@@ -70,8 +70,8 @@ export interface UserAccount {
 
 export type ClientDevicePlatform = 'web' | 'android' | 'tv';
 
-export const INSTALLED_APK_VERSION = '2.5.1';
-export const INSTALLED_APK_BUILD = 251;
+export const INSTALLED_APK_VERSION = '2.5.2';
+export const INSTALLED_APK_BUILD = 252;
 
 export interface PublicAppConfig {
   appName: string;

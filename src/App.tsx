@@ -152,6 +152,32 @@ export const App: React.FC = () => {
   });
   const [isAutoConnecting, setIsAutoConnecting] = useState<boolean>(false);
   const [autoConnectError, setAutoConnectError] = useState<string | null>(null);
+  const [isAppFullscreen, setIsAppFullscreen] = useState<boolean>(false);
+
+  const handleToggleAppFullscreen = useCallback(() => {
+    setIsAppFullscreen((prev) => {
+      const next = !prev;
+      try {
+        (window as any).NextPlayNative?.setFullScreen?.(next, false);
+      } catch {
+        // ignore
+      }
+      try {
+        if (next) {
+          const docEl = document.documentElement as any;
+          if (!document.fullscreenElement) {
+            if (docEl.requestFullscreen) docEl.requestFullscreen().catch(() => {});
+            else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
+          }
+        } else if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
   const [ignoredApkBuild, setIgnoredApkBuild] = useState<number>(() => {
     try {
       return Number(sessionStorage.getItem('nextplay_ignored_apk_build_v1') || '0');
@@ -1810,6 +1836,20 @@ export const App: React.FC = () => {
                     /
                   </kbd>
                 </div>
+              </button>
+
+              {/* Botão Maximizar / Minimizar Tela Full Cheia (Celular, Tablet e Web) */}
+              <button
+                type="button"
+                onClick={handleToggleAppFullscreen}
+                title={isAppFullscreen ? 'Minimizar Tela Cheia' : 'Maximizar em Tela Full Cheia'}
+                className="p-2 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 border border-slate-800 transition cursor-pointer"
+              >
+                {isAppFullscreen ? (
+                  <Minimize2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Maximize2 className="w-4 h-4" />
+                )}
               </button>
 
               {/* Botão de Configurações Técnicas & Telemetria (Gear) */}
