@@ -71,7 +71,7 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
         <div
           ref={rowRef}
           data-tv-row="true"
-          className="flex items-center gap-3 sm:gap-4 overflow-x-auto scrollbar-none scroll-smooth pb-3 pt-2 px-2 custom-scrollbar"
+          className="flex items-center gap-2.5 sm:gap-3.5 overflow-x-auto scrollbar-none pb-2 pt-1 px-2 custom-scrollbar"
         >
           {items.map((item) => {
             const isSelected = item.id === activeChannelId;
@@ -91,59 +91,60 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
                     onSelectChannel(item);
                   }
                 }}
-                className={`group/card relative shrink-0 rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 transform hover:-translate-y-2 hover:scale-[1.04] border ${
+                className={`group/card relative shrink-0 rounded-xl overflow-hidden cursor-pointer border bg-black ${
                   isPoster
-                    ? 'w-32 sm:w-40 md:w-48 aspect-[2/3]'
-                    : 'w-56 sm:w-64 md:w-72 aspect-video'
+                    ? 'w-28 sm:w-32 md:w-36 aspect-[2/3]'
+                    : 'w-44 sm:w-52 md:w-56 aspect-video'
                 } ${
                   isSelected
-                    ? 'border-cyan-400 shadow-neon-cyan ring-2 ring-cyan-400/50 bg-slate-900'
-                    : 'border-slate-800/80 hover:border-cyan-400/60 bg-[#0e1622] hover:shadow-[0_14px_35px_rgba(0,0,0,0.85)]'
+                    ? 'border-cyan-400 ring-2 ring-cyan-400/50'
+                    : 'border-slate-800/80 hover:border-cyan-400/60'
                 }`}
               >
-                {/* Imagem de Capa / Poster */}
+                {/* Imagem de Capa / Poster sobre Fundo Preto */}
                 {item.logo ? (
                   <img
                     src={item.logo}
                     alt={item.name}
                     loading="lazy"
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-105"
+                    decoding="async"
+                    className="w-full h-full object-cover bg-black"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#0c141e] to-[#14202e] text-slate-500 p-3 text-center">
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-black text-slate-500 p-3 text-center">
                     {item.mediaType === 'movie' ? (
-                      <Film className="w-9 h-9 text-purple-400/60 mb-2" />
+                      <Film className="w-7 h-7 text-purple-400/60 mb-1.5" />
                     ) : item.mediaType === 'series' ? (
-                      <Clapperboard className="w-9 h-9 text-emerald-400/60 mb-2" />
+                      <Clapperboard className="w-7 h-7 text-emerald-400/60 mb-1.5" />
                     ) : (
-                      <Radio className="w-9 h-9 text-cyan-400/60 mb-2" />
+                      <Radio className="w-7 h-7 text-cyan-400/60 mb-1.5" />
                     )}
-                    <span className="text-xs line-clamp-2 text-slate-200 font-bold">
+                    <span className="text-[11px] line-clamp-2 text-slate-200 font-bold">
                       {displayName}
                     </span>
                   </div>
                 )}
 
-                {/* Gradiente Escuro Netflix no Card (Foco perfeito na leitura) */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/35 to-transparent opacity-85 group-hover/card:opacity-95 transition-opacity" />
+                {/* Gradiente Escuro no Card */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-transparent" />
 
                 {/* Badges de Topo (Nota, Live, ou Grupo) */}
-                <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
+                <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none z-10">
                   {item.mediaType === 'live' ? (
-                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-600/90 text-white font-black text-[9px] uppercase tracking-wider shadow-md backdrop-blur-sm">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-600 text-white font-black text-[9px] uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white" />
                       Ao Vivo
                     </span>
                   ) : item.rating ? (
-                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[10px] font-bold text-amber-400 border border-amber-400/30">
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/85 text-[10px] font-bold text-amber-400 border border-amber-400/30">
                       <Star className="w-2.5 h-2.5 fill-amber-400" />
                       {item.rating}
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-semibold text-slate-300 border border-slate-700/60 truncate max-w-[90px]">
+                    <span className="px-1.5 py-0.5 rounded-md bg-black/85 text-[9px] font-semibold text-slate-300 border border-slate-700/60 truncate max-w-[80px]">
                       {item.group}
                     </span>
                   )}
@@ -155,17 +156,17 @@ export const StreamingRow: React.FC<StreamingRowProps> = ({
                       e.stopPropagation();
                       onToggleFavorite(item.id);
                     }}
-                    className="pointer-events-auto p-1.5 rounded-full bg-black/65 hover:bg-rose-500/30 text-slate-300 hover:text-rose-400 transition backdrop-blur-md"
+                    className="pointer-events-auto p-1 rounded-full bg-black/80 hover:bg-rose-500/30 text-slate-300 hover:text-rose-400"
                     title={isFav ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos'}
                   >
-                    <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-rose-500 text-rose-500' : ''}`} />
+                    <Heart className={`w-3 h-3 ${isFav ? 'fill-rose-500 text-rose-500' : ''}`} />
                   </button>
                 </div>
 
-                {/* Botão Central de Play no Hover (Animação Suave Netflix) */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 group-focus/card:opacity-100 transition-opacity duration-200 z-10">
-                  <div className="w-12 h-12 rounded-full bg-white text-slate-950 flex items-center justify-center shadow-[0_4px_20px_rgba(255,255,255,0.4)] transform scale-90 group-hover/card:scale-100 group-focus/card:scale-100 transition-transform">
-                    <Play className="w-6 h-6 fill-slate-950 ml-0.5" />
+                {/* Botão Central de Play no Hover/Foco */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 group-focus/card:opacity-100 z-10">
+                  <div className="w-10 h-10 rounded-full bg-white text-slate-950 flex items-center justify-center shadow-lg">
+                    <Play className="w-5 h-5 fill-slate-950 ml-0.5" />
                   </div>
                 </div>
 

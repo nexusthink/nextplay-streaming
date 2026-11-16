@@ -46,6 +46,8 @@ import {
   UserSubProfile,
   PublicServerOption,
   PublicAppConfig,
+  INSTALLED_APK_BUILD,
+  INSTALLED_APK_VERSION,
 } from './types/iptv';
 import { DEMO_CHANNELS } from './services/demoPlaylist';
 import { parseM3UContent } from './services/m3uParser';
@@ -150,6 +152,13 @@ export const App: React.FC = () => {
   });
   const [isAutoConnecting, setIsAutoConnecting] = useState<boolean>(false);
   const [autoConnectError, setAutoConnectError] = useState<string | null>(null);
+  const [ignoredApkBuild, setIgnoredApkBuild] = useState<number>(() => {
+    try {
+      return Number(sessionStorage.getItem('nextplay_ignored_apk_build_v1') || '0');
+    } catch {
+      return 0;
+    }
+  });
 
   // Ajustes de Imagem e Transmissão (Super Resolução Upscaling desativado por padrão para Decodificação 100% Hardware na TV)
   const [upscaling, setUpscaling] = useState<UpscalingMode>('off');
@@ -617,11 +626,102 @@ export const App: React.FC = () => {
     []
   );
 
-  // Suporte Avançado a Controle Remoto (D-Pad, Teclas Numéricas 0-9 e Atalhos Globais)
+  // Manipulador Global do Botão Voltar (Android TV / Controle Remoto / Teclado)
+  const handleGlobalBackAction = useCallback(() => {
+    // 1. Se o Player estiver aberto: executa Voltar em 2 etapas (1º mostra opções/timeline, 2º sai do player)
+    if (activeChannel) {
+      if (typeof (window as any).__nextplayPlayerBack === 'function') {
+        return (window as any).__nextplayPlayerBack();
+      }
+      setActiveChannel(null);
+      return 'player_closed';
+    }
+
+    // 2. Se a tela de detalhes do Filme/Série estiver aberta, fecha e volta ao catálogo
+    if (detailItem) {
+      setDetailItem(null);
+      return 'details_closed';
+    }
+
+    // 3. Se qualquer modal secundário estiver aberto, fecha-o
+    if (isOmniSearchOpen) {
+      setIsOmniSearchOpen(false);
+      return 'search_closed';
+    }
+    if (isSettingsModalOpen) {
+      setIsSettingsModalOpen(false);
+      return 'settings_closed';
+    }
+    if (isPinModalOpen) {
+      setIsPinModalOpen(false);
+      setPendingAdultChannel(null);
+      return 'pin_closed';
+    }
+    if (isModalOpen) {
+      setIsModalOpen(false);
+      return 'modal_closed';
+    }
+    if (isProfileMenuOpen) {
+      setIsProfileMenuOpen(false);
+      return 'menu_closed';
+    }
+
+    // 4. Botão explícito [data-tv-back="true"] na tela atual
+    const backBtn = document.querySelector<HTMLButtonElement>('[data-tv-back="true"]');
+    if (backBtn) {
+      backBtn.click();
+      return 'back_btn_clicked';
+    }
+
+    // 5. Se estiver em outra aba (TV ao Vivo, Filmes, Séries, Favoritos, Histórico), volta para Início
+    if (selectedNav !== 'all' || selectedMediaType !== 'all' || selectedCategory !== 'ALL') {
+      setSelectedNav('all');
+      setSelectedMediaType('all');
+      setSelectedCategory('ALL');
+      return 'returned_home';
+    }
+
+    return 'at_root';
+  }, [
+    activeChannel,
+    detailItem,
+    isOmniSearchOpen,
+    isSettingsModalOpen,
+    isPinModalOpen,
+    isModalOpen,
+    isProfileMenuOpen,
+    selectedNav,
+    selectedMediaType,
+    selectedCategory,
+  ]);
+
+  useEffect(() => {
+    (window as any).__nextplayHandleBack = handleGlobalBackAction;
+    return () => {
+      delete (window as any).__nextplayHandleBack;
+    };
+  }, [handleGlobalBackAction]);
+
+  // Suporte Avançado e Instantâneo (0ms lag) a Controle Remoto (D-Pad, Teclas Numéricas 0-9 e Atalhos Globais)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || (e.target as HTMLElement)?.isContentEditable) {
+        if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack') {
+          (e.target as HTMLElement).blur();
+        }
+        return;
+      }
+
+      // Quando o Player está aberto, o próprio VideoPlayerEngine gerencia as teclas e o Voltar em 2 etapas
+      if (activeChannel) {
+        return;
+      }
+
+      // Botão Voltar (Escape / GoBack / Backspace) do Controle Remoto da TV
+      if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleGlobalBackAction();
         return;
       }
 
@@ -632,25 +732,42 @@ export const App: React.FC = () => {
         return;
       }
 
-      // Navegação Espacial D-Pad Inteligente (Controle Remoto Android TV / TV Box / Fire Stick)
+      // Navegação Espacial D-Pad Ultra Rápida (0ms lag)
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        const current = document.activeElement as HTMLElement | null;
+
+        // Fast-Path 1: Navegação Horizontal imediata dentro de uma fileira ([data-tv-row="true"]) sem varrer o DOM inteiro
+        const currentRow = current?.closest<HTMLElement>('[data-tv-row="true"]');
+        if (current && currentRow && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          const rowCards = Array.from(
+            currentRow.querySelectorAll<HTMLElement>('[data-tv-card="true"]')
+          ).filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0);
+          const idx = rowCards.indexOf(current);
+          if (idx !== -1) {
+            const nextIdx = e.key === 'ArrowRight' ? idx + 1 : idx - 1;
+            if (nextIdx >= 0 && nextIdx < rowCards.length) {
+              e.preventDefault();
+              const target = rowCards[nextIdx];
+              target.focus({ preventScroll: true });
+              target.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
+            }
+            return;
+          }
+        }
+
         const focusable = Array.from(
           document.querySelectorAll<HTMLElement>(
             'button:not([disabled]):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])'
           )
-        ).filter((el) => {
-          const rect = el.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
-        });
+        ).filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0);
 
         if (focusable.length > 0) {
-          const current = document.activeElement as HTMLElement | null;
           if (!current || !focusable.includes(current)) {
             e.preventDefault();
             const firstMainCard = document.querySelector<HTMLElement>('main [data-tv-card="true"]');
             const target = firstMainCard && focusable.includes(firstMainCard) ? firstMainCard : focusable[0];
             target.focus({ preventScroll: true });
-            target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+            target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
             return;
           }
 
@@ -659,25 +776,6 @@ export const App: React.FC = () => {
             x: curRect.left + curRect.width / 2,
             y: curRect.top + curRect.height / 2,
           };
-
-          // 1. Se estiver dentro de uma fileira horizontal ([data-tv-row="true"])
-          const currentRow = current.closest<HTMLElement>('[data-tv-row="true"]');
-          if (currentRow && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-            const rowCards = Array.from(currentRow.querySelectorAll<HTMLElement>('[data-tv-card="true"]')).filter(
-              (el) => focusable.includes(el)
-            );
-            const idx = rowCards.indexOf(current);
-            if (idx !== -1) {
-              const nextIdx = e.key === 'ArrowRight' ? idx + 1 : idx - 1;
-              if (nextIdx >= 0 && nextIdx < rowCards.length) {
-                e.preventDefault();
-                const target = rowCards[nextIdx];
-                target.focus({ preventScroll: true });
-                target.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-              }
-              return;
-            }
-          }
 
           // 2. Navegação Vertical entre Fileiras Horizontais ([data-tv-row="true"]) dentro do <main>
           if (currentRow && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -694,10 +792,9 @@ export const App: React.FC = () => {
                 const targetRow = allRows[targetRowIdx];
                 const targetCards = Array.from(
                   targetRow.querySelectorAll<HTMLElement>('[data-tv-card="true"]')
-                ).filter((el) => focusable.includes(el));
+                ).filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0);
                 if (targetCards.length > 0) {
                   e.preventDefault();
-                  // Escolhe o card da fileira destino mais alinhado horizontalmente com o atual
                   let bestRowCard = targetCards[0];
                   let minDx = Infinity;
                   for (const tc of targetCards) {
@@ -710,7 +807,7 @@ export const App: React.FC = () => {
                     }
                   }
                   bestRowCard.focus({ preventScroll: true });
-                  bestRowCard.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+                  bestRowCard.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
                   return;
                 }
               }
@@ -721,7 +818,6 @@ export const App: React.FC = () => {
           const isInMain = Boolean(current.closest('main'));
           const isInHeader = Boolean(current.closest('header'));
 
-          // Filtra candidatos prioritários para evitar que o cursor pule para fora do catálogo ao descer
           let pool = focusable;
           if (isInHeader && e.key === 'ArrowDown') {
             const mainCandidates = focusable.filter((el) => Boolean(el.closest('main')));
@@ -773,14 +869,13 @@ export const App: React.FC = () => {
             return best;
           };
 
-          let bestCandidate = findBestInPool(pool, true) || findBestInPool(pool, false);
+          const bestCandidate = findBestInPool(pool, true) || findBestInPool(pool, false);
 
-          // Se estiver descendo dentro do catálogo e a próxima fileira estiver abaixo da dobra de scroll
           if (!bestCandidate && isInMain && e.key === 'ArrowDown') {
             const scrollContainer = current.closest<HTMLElement>('.overflow-y-auto');
             if (scrollContainer) {
               e.preventDefault();
-              scrollContainer.scrollBy({ top: 320, behavior: 'smooth' });
+              scrollContainer.scrollBy({ top: 280, behavior: 'auto' });
               return;
             }
           }
@@ -790,23 +885,13 @@ export const App: React.FC = () => {
             if (isInMain && e.key === 'ArrowUp' && bestCandidate.closest('header')) {
               const scrollContainer = current.closest<HTMLElement>('.overflow-y-auto');
               if (scrollContainer) {
-                scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+                scrollContainer.scrollTo({ top: 0, behavior: 'auto' });
               }
             }
             bestCandidate.focus({ preventScroll: true });
-            bestCandidate.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+            bestCandidate.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
             return;
           }
-        }
-      }
-
-      // Botão Voltar (Escape / GoBack) do Controle Remoto da TV
-      if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack') {
-        const backBtn = document.querySelector<HTMLButtonElement>('[data-tv-back="true"]');
-        if (backBtn) {
-          e.preventDefault();
-          backBtn.click();
-          return;
         }
       }
 
@@ -831,7 +916,7 @@ export const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [channels, handleSelectChannel]);
+  }, [channels, activeChannel, handleSelectChannel, handleGlobalBackAction]);
 
   // Apaga o histórico local por escopo (Canais, Filmes, Séries ou Tudo) — apenas localStorage deste dispositivo
   const handleClearHistory = useCallback((scope: HistoryClearScope) => {
@@ -1584,10 +1669,10 @@ export const App: React.FC = () => {
           onLogoutAccount={handleLogoutAccount}
         />
       ) : (
-        <div className="flex flex-col h-screen w-screen bg-[#090d11] text-slate-100 overflow-hidden select-none">
+        <div className="flex flex-col h-screen w-screen bg-black text-slate-100 overflow-hidden select-none">
           {/* Header Superior Estilo Netflix / Apple TV / Prime Video */}
           <header
-            className="h-16 bg-[#080d14]/95 backdrop-blur-xl border-b border-slate-800/80 px-4 sm:px-8 flex items-center justify-between shrink-0 z-30 sticky top-0"
+            className="h-14 bg-[#05080d] border-b border-slate-800/80 px-4 sm:px-8 flex items-center justify-between shrink-0 z-30 sticky top-0"
             style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
           >
             {/* Esquerda: Logo NextPlay + Links Principais de Navegação */}
@@ -2316,6 +2401,68 @@ export const App: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* 4. Modal Automático de Nova Atualização do APK (Aparece no App quando há nova versão no servidor) */}
+      {isRunningInNativeApp() &&
+        Boolean(appConfig.apkBuild && appConfig.apkBuild > INSTALLED_APK_BUILD) &&
+        ignoredApkBuild !== appConfig.apkBuild &&
+        !activeChannel && (
+          <div className="fixed inset-0 z-[90] bg-black/90 flex items-center justify-center p-4 select-none">
+            <div className="w-full max-w-md bg-[#0b1018] border border-emerald-500/40 rounded-2xl p-6 shadow-2xl space-y-4 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center mx-auto text-emerald-400">
+                <Sparkles className="w-6 h-6" />
+              </div>
+
+              <div>
+                <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold uppercase tracking-wider mb-1">
+                  Nova Atualização Disponível
+                </span>
+                <h3 className="text-lg font-extrabold text-white">
+                  {appConfig.appName || 'NextPlay'} v{appConfig.apkVersion || 'Nova'}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Sua versão atual: v{INSTALLED_APK_VERSION}
+                </p>
+              </div>
+
+              {appConfig.apkReleaseNotes && (
+                <div className="p-3 rounded-xl bg-black border border-slate-800 text-left text-xs text-slate-300 leading-relaxed">
+                  {appConfig.apkReleaseNotes}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
+                <a
+                  href={
+                    appConfig.apkDownloadUrl ||
+                    'https://nextplay.vps9818.panel.icontainer.run/download/nextplay.apk'
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  autoFocus
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 focus:bg-white text-slate-950 font-black text-xs uppercase tracking-wide transition cursor-pointer text-center"
+                >
+                  Baixar Atualização Agora
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = Number(appConfig.apkBuild) || 0;
+                    setIgnoredApkBuild(b);
+                    try {
+                      sessionStorage.setItem('nextplay_ignored_apk_build_v1', String(b));
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="w-full sm:w-auto py-3 px-5 rounded-xl bg-slate-800 hover:bg-slate-700 focus:bg-emerald-500 focus:text-slate-950 text-slate-300 font-bold text-xs transition cursor-pointer shrink-0"
+                >
+                  Ignorar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </>
   );
 };

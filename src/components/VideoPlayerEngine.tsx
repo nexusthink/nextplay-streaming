@@ -72,6 +72,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [hasVideoFrame, setHasVideoFrame] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
 
@@ -142,19 +143,6 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
     };
   }, [wakeUpControls, channel?.id]);
 
-  // Tenta entrar em tela cheia nativa do navegador/TV ao abrir o player
-  useEffect(() => {
-    const el = containerRef.current;
-    if (el && !document.fullscreenElement && el.requestFullscreen) {
-      el.requestFullscreen().catch(() => {});
-    }
-    return () => {
-      if (document.fullscreenElement && document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
-    };
-  }, []);
-
   const clearBufferingIndicator = useCallback(() => {
     if (bufferingTimerRef.current) {
       window.clearTimeout(bufferingTimerRef.current);
@@ -221,6 +209,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
       destroyPlayers();
       setErrorMsg(null);
       setIsBuffering(true);
+      setHasVideoFrame(false);
       setQualities([]);
       setCurrentQuality(-1);
       networkRetryCountRef.current = 0;
@@ -439,21 +428,42 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
       .slice(0, 6);
   }, [channel, playlistChannels]);
 
+  // Lógica de Voltar em 2 Etapas no Player:
+  // 1º Clique (com controles ocultos): Mostra opções do player, linha do tempo, etc.
+  // 2º Clique (com controles já visíveis): Sai do player e volta para a tela anterior.
+  const handlePlayerBack = useCallback(() => {
+    if (showEpisodesDrawer) {
+      setShowEpisodesDrawer(false);
+      wakeUpControls();
+      return 'drawer_closed';
+    }
+    if (showQualityMenu) {
+      setShowQualityMenu(false);
+      wakeUpControls();
+      return 'quality_closed';
+    }
+    if (!controlsVisible) {
+      wakeUpControls();
+      return 'controls_shown';
+    }
+    onClose?.();
+    return 'player_closed';
+  }, [showEpisodesDrawer, showQualityMenu, controlsVisible, wakeUpControls, onClose]);
+
+  useEffect(() => {
+    (window as any).__nextplayPlayerBack = handlePlayerBack;
+    return () => {
+      delete (window as any).__nextplayPlayerBack;
+    };
+  }, [handlePlayerBack]);
+
   // Controle Remoto da TV dentro do Player em Tela Cheia
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || e.key === 'Backspace') {
         e.preventDefault();
         e.stopPropagation();
-        if (showEpisodesDrawer) {
-          setShowEpisodesDrawer(false);
-          return;
-        }
-        if (showQualityMenu) {
-          setShowQualityMenu(false);
-          return;
-        }
-        onClose?.();
+        handlePlayerBack();
         return;
       }
 
@@ -503,7 +513,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
     handleSeekBackward,
     handleSeekForward,
     togglePlay,
-    onClose,
+    handlePlayerBack,
   ]);
 
   const formatTime = (sec: number) => {
@@ -537,12 +547,14 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
       onClick={wakeUpControls}
       className="fixed inset-0 z-[100] w-screen h-screen bg-black overflow-hidden select-none flex flex-col justify-between"
     >
-      {/* Elemento de Vídeo HTML5 Puro e Leve (Aceleração de Hardware Nativa) */}
+      {/* Elemento de Vídeo HTML5 Puro e Leve (Fundo 100% Preto sem Poster Cinza do WebView) */}
       <video
         ref={videoRef}
+        poster="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs="
         className="w-full h-full object-contain bg-black"
         playsInline
         autoPlay
+        onLoadedData={() => setHasVideoFrame(true)}
         onPlay={() => {
           setIsPlaying(true);
           clearBufferingIndicator();
@@ -550,10 +562,14 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
         onPause={() => setIsPlaying(false)}
         onWaiting={triggerBufferingWithDebounce}
         onPlaying={() => {
+          setHasVideoFrame(true);
           clearBufferingIndicator();
           setErrorMsg(null);
         }}
-        onCanPlay={clearBufferingIndicator}
+        onCanPlay={() => {
+          setHasVideoFrame(true);
+          clearBufferingIndicator();
+        }}
         onTimeUpdate={(e) => {
           const v = e.currentTarget;
           const now = v.currentTime || 0;
@@ -582,10 +598,15 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
         }}
       />
 
-      {/* Indicador Leve de Carregamento */}
-      {isBuffering && !errorMsg && (
+      {/* Cortina 100% Preta enquanto carrega o 1º frame (elimina qualquer fundo cinza) */}
+      {!hasVideoFrame && !errorMsg && (
+        <div className="absolute inset-0 bg-black pointer-events-none z-10" />
+      )}
+
+      {/* Indicador Leve de Carregamento sobre fundo preto */}
+      {(isBuffering || !hasVideoFrame) && !errorMsg && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-          <div className="w-12 h-12 rounded-full border-4 border-white/20 border-t-emerald-400 animate-spin" />
+          <div className="w-11 h-11 rounded-full border-4 border-white/15 border-t-emerald-400 animate-spin" />
         </div>
       )}
 

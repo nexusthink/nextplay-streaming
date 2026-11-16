@@ -70,6 +70,9 @@ export interface UserAccount {
 
 export type ClientDevicePlatform = 'web' | 'android' | 'tv';
 
+export const INSTALLED_APK_VERSION = '2.5.0';
+export const INSTALLED_APK_BUILD = 250;
+
 export interface PublicAppConfig {
   appName: string;
   supportWhatsapp: string;
@@ -79,6 +82,10 @@ export interface PublicAppConfig {
   googleClientIdTv?: string;
   googleSmartSwitch?: boolean;
   allowDemoMode: boolean;
+  apkVersion?: string;
+  apkBuild?: number;
+  apkDownloadUrl?: string;
+  apkReleaseNotes?: string;
 }
 
 export interface SeriesEpisode {

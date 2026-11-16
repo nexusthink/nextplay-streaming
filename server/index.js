@@ -286,6 +286,9 @@ app.get('/api/public/config', (_req, res) => {
       isDefault: Boolean(s.isDefault),
     }));
 
+  const serverCodeBuild = 250;
+  const currentApkBuild = Math.max(serverCodeBuild, Number(db.settings.apkBuild) || serverCodeBuild);
+
   res.json({
     settings: {
       appName: db.settings.appName || 'NextPlay',
@@ -296,6 +299,13 @@ app.get('/api/public/config', (_req, res) => {
       googleClientIdTv: db.settings.googleClientIdTv || '',
       googleSmartSwitch: db.settings.googleSmartSwitch !== false,
       allowDemoMode: db.settings.allowDemoMode !== false,
+      apkVersion: db.settings.apkVersion || '2.5.0',
+      apkBuild: currentApkBuild,
+      apkDownloadUrl:
+        db.settings.apkDownloadUrl || 'https://nextplay.vps9818.panel.icontainer.run/download/nextplay.apk',
+      apkReleaseNotes:
+        db.settings.apkReleaseNotes ||
+        'Novo Player 60fps sem travamentos, botão Voltar em 2 etapas, Rolo de Destaques e melhorias na Smart TV.',
     },
     servers: activeServers,
   });
@@ -1004,6 +1014,10 @@ app.put('/api/admin/settings', requireAdminAuth, (req, res) => {
     googleClientIdTv,
     googleSmartSwitch,
     allowDemoMode,
+    apkVersion,
+    apkBuild,
+    apkDownloadUrl,
+    apkReleaseNotes,
     adminEmail,
     adminName,
     adminNewPassword,
@@ -1028,6 +1042,10 @@ app.put('/api/admin/settings', requireAdminAuth, (req, res) => {
     db.settings.googleSmartSwitch = Boolean(googleSmartSwitch);
   }
   if (allowDemoMode !== undefined) db.settings.allowDemoMode = Boolean(allowDemoMode);
+  if (apkVersion !== undefined) db.settings.apkVersion = String(apkVersion).trim();
+  if (apkBuild !== undefined) db.settings.apkBuild = Number(apkBuild) || 250;
+  if (apkDownloadUrl !== undefined) db.settings.apkDownloadUrl = String(apkDownloadUrl).trim();
+  if (apkReleaseNotes !== undefined) db.settings.apkReleaseNotes = String(apkReleaseNotes).trim();
 
   if (adminEmail && String(adminEmail).includes('@')) {
     db.admin.email = String(adminEmail).trim().toLowerCase();

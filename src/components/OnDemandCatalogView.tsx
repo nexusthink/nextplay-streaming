@@ -921,7 +921,7 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
       )}
 
       {/* 4. GRADE VERTICAL EFICAZ DE PÔSTERES (Vertical Poster Grid 2:3) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3.5 sm:gap-5 pb-4">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 sm:gap-4 pb-4">
         {visibleItems.map((item) => {
           const isSelected = item.id === activeChannelId;
           const isFav = favorites.has(item.id);
@@ -944,47 +944,48 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
                   else onSelectChannel(item);
                 }
               }}
-              className={`group relative flex flex-col rounded-2xl bg-[#0a1017] border cursor-pointer transition-all duration-300 transform hover:-translate-y-2 hover:shadow-[0_16px_36px_rgba(0,0,0,0.9)] overflow-hidden ${
+              className={`group relative flex flex-col rounded-xl bg-black border cursor-pointer overflow-hidden ${
                 isSelected
-                  ? 'border-cyan-400 bg-cyan-950/20 shadow-neon-cyan'
-                  : 'border-slate-800/80 hover:border-cyan-500/60 hover:bg-[#0e1622]'
+                  ? 'border-cyan-400'
+                  : 'border-slate-800/80 hover:border-cyan-500/60'
               }`}
             >
-              {/* Pôster Vertical 2:3 */}
-              <div className="relative w-full aspect-[2/3] bg-gradient-to-b from-[#131b26] to-[#080d13] overflow-hidden flex items-center justify-center">
+              {/* Pôster Vertical 2:3 sobre Fundo Preto */}
+              <div className="relative w-full aspect-[2/3] bg-black overflow-hidden flex items-center justify-center">
                 {item.logo ? (
                   <img
                     src={item.logo}
                     alt={cleanTitle}
                     loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    decoding="async"
+                    className="w-full h-full object-cover bg-black"
                     onError={(e) => {
                       (e.currentTarget as HTMLElement).style.display = 'none';
                     }}
                   />
                 ) : (
-                  <div className="flex flex-col items-center justify-center p-4 text-center">
-                    <Film className="w-10 h-10 text-slate-700 mb-2 group-hover:text-cyan-400 transition" />
+                  <div className="flex flex-col items-center justify-center p-3 text-center bg-black">
+                    <Film className="w-8 h-8 text-slate-700 mb-1.5" />
                     <span className="text-[10px] text-slate-500 line-clamp-2">{cleanTitle}</span>
                   </div>
                 )}
 
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0a1017] via-transparent to-transparent opacity-80" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
 
                 {/* Badge de Nota */}
-                <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/75 backdrop-blur-md text-[10px] font-black text-amber-300 border border-amber-500/30">
-                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                <div className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/85 text-[10px] font-black text-amber-300 border border-amber-500/30">
+                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                   <span>{rating}</span>
                 </div>
 
                 {/* Badge Dublado/Legendado */}
                 <div className="absolute top-2 right-2">
                   {isLeg ? (
-                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500/90 backdrop-blur-md text-[9px] font-mono font-bold text-slate-950 shadow-sm">
+                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-[9px] font-mono font-bold text-slate-950">
                       LEG
                     </span>
                   ) : (
-                    <span className="px-1.5 py-0.5 rounded-md bg-teal-500/90 backdrop-blur-md text-[9px] font-mono font-bold text-slate-950 shadow-sm">
+                    <span className="px-1.5 py-0.5 rounded-md bg-teal-500 text-[9px] font-mono font-bold text-slate-950">
                       DUB
                     </span>
                   )}
@@ -992,10 +993,10 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
 
                 {/* Play Button Overlay */}
                 <div
-                  className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 flex items-center justify-center"
                 >
-                  <div className="w-12 h-12 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center shadow-neon-cyan transform group-hover:scale-110 transition-transform">
-                    <Play className="w-6 h-6 fill-slate-950 ml-0.5" />
+                  <div className="w-10 h-10 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center">
+                    <Play className="w-5 h-5 fill-slate-950 ml-0.5" />
                   </div>
                 </div>
 
@@ -1007,10 +1008,10 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
                     e.stopPropagation();
                     onToggleFavorite(item.id);
                   }}
-                  className="absolute bottom-2 right-2 p-2 rounded-xl bg-black/75 backdrop-blur-md text-slate-400 hover:text-rose-400 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/80 text-slate-400 hover:text-rose-400 border border-white/10 opacity-0 group-hover:opacity-100"
                   title="Salvar na Minha Lista"
                 >
-                  <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-rose-500 text-rose-500' : ''}`} />
+                  <Heart className={`w-3 h-3 ${isFav ? 'fill-rose-500 text-rose-500' : ''}`} />
                 </button>
               </div>
 

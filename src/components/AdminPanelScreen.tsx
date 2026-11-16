@@ -703,6 +703,26 @@ export const AdminPanelScreen: React.FC<AdminPanelScreenProps> = ({
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <button
               type="button"
+              onClick={async () => {
+                try {
+                  const nextBuild = Math.max(251, (Number(overview?.settings?.apkBuild) || 250) + 1);
+                  await adminUpdateSettings({
+                    apkBuild: nextBuild,
+                    apkVersion: `2.5.${nextBuild - 250}`,
+                  } as any);
+                  showToast('Aviso de Nova Atualização enviado para todos os APKs instalados!');
+                  await loadOverview();
+                  await onConfigChanged?.();
+                } catch {
+                  showToast('Erro ao disparar aviso de atualização.', true);
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-xs font-bold text-amber-300 transition cursor-pointer"
+            >
+              Notificar Atualização nos Apps
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 navigator.clipboard?.writeText(`${window.location.origin}/apk`);
                 showToast('Link do APK copiado para a área de transferência!');

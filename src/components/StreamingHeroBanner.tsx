@@ -88,7 +88,7 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
       onMouseLeave={() => setIsPaused(false)}
       onFocusCapture={() => setIsPaused(true)}
       onBlurCapture={() => setIsPaused(false)}
-      className="relative w-full h-[360px] sm:h-[440px] md:h-[500px] lg:h-[540px] rounded-3xl overflow-hidden shadow-2xl mb-6 border border-slate-800/60 group select-none bg-[#070b10]"
+      className="relative w-full h-[220px] sm:h-[260px] md:h-[300px] lg:h-[330px] rounded-2xl overflow-hidden shadow-xl mb-4 border border-slate-800/70 group select-none bg-black"
     >
       {/* Imagem de Fundo / Backdrop do Destaque Atual */}
       {bgImage ? (
@@ -96,16 +96,16 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
           key={activeItem.id}
           src={bgImage}
           alt={activeItem.name}
-          className="w-full h-full object-cover object-center transition-opacity duration-500 filter brightness-90"
+          className="w-full h-full object-cover object-center filter brightness-90 bg-black"
         />
       ) : (
-        <div className="w-full h-full bg-gradient-to-br from-[#070b10] via-[#0d1622] to-[#070b10]" />
+        <div className="w-full h-full bg-black" />
       )}
 
-      {/* Gradientes Múltiplos Estilo Netflix (Vignette Escura para leitura impecável) */}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#090d11] via-[#090d11]/65 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-r from-[#090d11] via-[#090d11]/85 to-transparent w-full md:w-3/4" />
-      <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-[#090d11]/80 to-transparent" />
+      {/* Gradientes Múltiplos Estilo Netflix sobre Fundo Preto */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/65 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent w-full md:w-3/4" />
+      <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-black/80 to-transparent" />
 
       {/* Setas Laterais do Rolo de Destaques (Esquerda / Direita) */}
       {bannerItems.length > 1 && (
@@ -131,9 +131,9 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
       )}
 
       {/* Conteúdo Principal do Destaque */}
-      <div className="absolute inset-0 p-6 sm:p-10 md:p-12 flex flex-col justify-end max-w-2xl z-10">
+      <div className="absolute inset-0 p-4 sm:p-6 md:p-8 flex flex-col justify-end max-w-xl z-10">
         {/* Badges de Categoria & Especificações Técnicas Limpas */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <span
             className={`px-2.5 py-1 rounded-md text-[10px] font-black tracking-widest uppercase flex items-center gap-1 shadow-md ${
               isSeries
@@ -177,12 +177,12 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
         </div>
 
         {/* Título Principal */}
-        <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)] tracking-tight mb-3 line-clamp-1">
+        <h1 className="text-xl sm:text-3xl md:text-4xl font-black text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)] tracking-tight mb-2 line-clamp-1">
           {displayName}
         </h1>
 
         {/* Sinopse / Prólogo */}
-        <p className="text-xs sm:text-sm text-slate-300/90 line-clamp-2 sm:line-clamp-3 mb-6 leading-relaxed font-medium drop-shadow-md max-w-xl">
+        <p className="text-xs sm:text-sm text-slate-300/90 line-clamp-2 mb-4 leading-relaxed font-medium drop-shadow-md max-w-lg">
           {activeItem.plot ||
             (activeItem.epgCurrent
               ? `Agora transmitindo: ${activeItem.epgCurrent.title} (${activeItem.epgCurrent.start} - ${activeItem.epgCurrent.end})`
@@ -192,23 +192,23 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
         </p>
 
         {/* Botões de Ação (Assistir Agora + Minha Lista) */}
-        <div className="flex items-center gap-3" data-tv-row="true">
+        <div className="flex items-center gap-2.5" data-tv-row="true">
           <button
             data-tv-card="true"
             onClick={() => onPlay(activeItem)}
-            className="flex items-center gap-2.5 px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl bg-white hover:bg-slate-200 focus:bg-emerald-400 text-slate-950 font-black text-sm shadow-[0_8px_25px_rgba(255,255,255,0.25)] transition-all cursor-pointer"
+            className="flex items-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl bg-white hover:bg-slate-200 focus:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm shadow-lg cursor-pointer"
           >
-            <Play className="w-5 h-5 fill-slate-950" />
+            <Play className="w-4 h-4 fill-slate-950" />
             <span>Assistir Agora</span>
           </button>
 
           <button
             data-tv-card="true"
             onClick={() => onToggleFavorite(activeItem.id)}
-            className={`flex items-center gap-2 px-5 py-3 sm:py-3.5 rounded-xl border text-sm font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold cursor-pointer ${
               currentIsFavorite
                 ? 'bg-rose-500/20 border-rose-500/60 text-rose-300 hover:bg-rose-500/30'
-                : 'bg-slate-900/75 hover:bg-slate-800 border-white/20 text-white'
+                : 'bg-black/80 hover:bg-slate-900 border-white/20 text-white'
             }`}
           >
             <Heart
