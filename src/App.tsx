@@ -166,11 +166,11 @@ export const App: React.FC = () => {
         if (next) {
           const docEl = document.documentElement as any;
           if (!document.fullscreenElement) {
-            if (docEl.requestFullscreen) docEl.requestFullscreen().catch(() => {});
+            if (docEl.requestFullscreen) docEl.requestFullscreen().catch(() => { });
             else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
           }
         } else if (document.fullscreenElement && document.exitFullscreen) {
-          document.exitFullscreen().catch(() => {});
+          document.exitFullscreen().catch(() => { });
         }
       } catch {
         // ignore
@@ -758,16 +758,56 @@ export const App: React.FC = () => {
         return;
       }
 
-      // Navegação Espacial D-Pad Ultra Rápida (0ms lag)
+      // Navegação Espacial D-Pad Matemática O(1) (Estilo Prime Video / Netflix TV - 0ms lag)
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         const current = document.activeElement as HTMLElement | null;
 
-        // Fast-Path 1: Navegação Horizontal imediata dentro de uma fileira ([data-tv-row="true"]) sem varrer o DOM inteiro
+        // Fast-Path 1: Matriz Matemática (rowIdx, colIdx) nas fileiras da Home e Hero Banner
+        const rowAttr = current?.getAttribute('data-tv-row-idx');
+        const colAttr = current?.getAttribute('data-tv-col-idx');
+        if (current && rowAttr && colAttr) {
+          const r = parseInt(rowAttr, 10);
+          const c = parseInt(colAttr, 10);
+
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const nextC = e.key === 'ArrowRight' ? c + 1 : c - 1;
+            const target = document.querySelector<HTMLElement>(
+              `[data-tv-row-idx="${r}"][data-tv-col-idx="${nextC}"]`
+            );
+            if (target) {
+              e.preventDefault();
+              target.focus({ preventScroll: true });
+              target.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
+            }
+            return;
+          }
+
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            const nextR = e.key === 'ArrowDown' ? r + 1 : r - 1;
+            if (nextR >= 0) {
+              const target =
+                document.querySelector<HTMLElement>(
+                  `[data-tv-row-idx="${nextR}"][data-tv-col-idx="${c}"]`
+                ) ||
+                document.querySelector<HTMLElement>(
+                  `[data-tv-row-idx="${nextR}"][data-tv-col-idx="0"]`
+                );
+              if (target) {
+                e.preventDefault();
+                target.focus({ preventScroll: true });
+                target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+                return;
+              }
+            }
+          }
+        }
+
+        // Fast-Path 2: Navegação Horizontal imediata dentro de qualquer fileira ([data-tv-row="true"])
         const currentRow = current?.closest<HTMLElement>('[data-tv-row="true"]');
         if (current && currentRow && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
           const rowCards = Array.from(
             currentRow.querySelectorAll<HTMLElement>('[data-tv-card="true"]')
-          ).filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0);
+          );
           const idx = rowCards.indexOf(current);
           if (idx !== -1) {
             const nextIdx = e.key === 'ArrowRight' ? idx + 1 : idx - 1;
@@ -808,8 +848,8 @@ export const App: React.FC = () => {
             const mainEl = document.querySelector('main');
             const allRows = mainEl
               ? Array.from(mainEl.querySelectorAll<HTMLElement>('[data-tv-row="true"]')).filter((row) =>
-                  row.querySelector('[data-tv-card="true"]')
-                )
+                row.querySelector('[data-tv-card="true"]')
+              )
               : [];
             const rowIdx = allRows.indexOf(currentRow);
             if (rowIdx !== -1) {
@@ -1006,6 +1046,21 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // Pré-indexação em memória dos canais por tipo (evita varrer 31.900 itens a cada troca de aba)
+  const { liveChannels, movieChannels, seriesChannels } = useMemo(() => {
+    const isKids = Boolean(activeUserProfile?.isKids);
+    const live: ChannelItem[] = [];
+    const movies: ChannelItem[] = [];
+    const series: ChannelItem[] = [];
+    for (const ch of channels) {
+      if (isKids && isAdultContent(ch)) continue;
+      if (ch.mediaType === 'live') live.push(ch);
+      else if (ch.mediaType === 'movie') movies.push(ch);
+      else if (ch.mediaType === 'series') series.push(ch);
+    }
+    return { liveChannels: live, movieChannels: movies, seriesChannels: series };
+  }, [channels, activeUserProfile]);
+
   // Categorias dinâmicas extraídas dos canais carregados (respeitando Perfil Kids)
   const categories = useMemo<CategoryItem[]>(() => {
     const counts = new Map<string, number>();
@@ -1197,7 +1252,7 @@ export const App: React.FC = () => {
       } catch {
         throw new Error(
           proxyErrMsg ||
-            'Não foi possível acessar esta URL M3U. Verifique se o endereço do servidor existe e está online.'
+          'Não foi possível acessar esta URL M3U. Verifique se o endereço do servidor existe e está online.'
         );
       }
     }
@@ -1393,7 +1448,7 @@ export const App: React.FC = () => {
     const onPopState = () => {
       setIsAdminView(
         window.location.pathname.startsWith('/admin') ||
-          window.location.hash === '#admin'
+        window.location.hash === '#admin'
       );
     };
     window.addEventListener('popstate', onPopState);
@@ -1730,11 +1785,10 @@ export const App: React.FC = () => {
                     setSelectedMediaType('all');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
-                    selectedNav === 'all' && selectedMediaType === 'all'
-                      ? 'bg-white text-slate-950 font-bold shadow-md'
-                      : 'text-slate-300 hover:text-white hover:bg-white/5'
-                  }`}
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${selectedNav === 'all' && selectedMediaType === 'all'
+                    ? 'bg-white text-slate-950 font-bold shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    }`}
                 >
                   Início
                 </button>
@@ -1745,11 +1799,10 @@ export const App: React.FC = () => {
                     setSelectedMediaType('live');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1.5 shrink-0 ${
-                    selectedMediaType === 'live' && selectedNav === 'all'
-                      ? 'bg-white text-slate-950 font-bold shadow-md'
-                      : 'text-slate-300 hover:text-white hover:bg-white/5'
-                  }`}
+                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1.5 shrink-0 ${selectedMediaType === 'live' && selectedNav === 'all'
+                    ? 'bg-white text-slate-950 font-bold shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    }`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
                   TV ao Vivo
@@ -1761,11 +1814,10 @@ export const App: React.FC = () => {
                     setSelectedMediaType('movie');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
-                    selectedMediaType === 'movie' && selectedNav === 'all'
-                      ? 'bg-white text-slate-950 font-bold shadow-md'
-                      : 'text-slate-300 hover:text-white hover:bg-white/5'
-                  }`}
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${selectedMediaType === 'movie' && selectedNav === 'all'
+                    ? 'bg-white text-slate-950 font-bold shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    }`}
                 >
                   Filmes
                 </button>
@@ -1776,11 +1828,10 @@ export const App: React.FC = () => {
                     setSelectedMediaType('series');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
-                    selectedMediaType === 'series' && selectedNav === 'all'
-                      ? 'bg-white text-slate-950 font-bold shadow-md'
-                      : 'text-slate-300 hover:text-white hover:bg-white/5'
-                  }`}
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${selectedMediaType === 'series' && selectedNav === 'all'
+                    ? 'bg-white text-slate-950 font-bold shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    }`}
                 >
                   Séries
                 </button>
@@ -1791,11 +1842,10 @@ export const App: React.FC = () => {
                     setSelectedMediaType('all');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1 shrink-0 ${
-                    selectedNav === 'favorites'
-                      ? 'bg-white text-slate-950 font-bold shadow-md'
-                      : 'text-slate-300 hover:text-white hover:bg-white/5'
-                  }`}
+                  className={`px-3 py-1.5 rounded-full transition flex items-center gap-1 shrink-0 ${selectedNav === 'favorites'
+                    ? 'bg-white text-slate-950 font-bold shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    }`}
                 >
                   <Heart className="w-3.5 h-3.5 text-rose-500" />
                   Minha Lista
@@ -1807,11 +1857,10 @@ export const App: React.FC = () => {
                     setSelectedMediaType('all');
                     setSelectedCategory('ALL');
                   }}
-                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${
-                    selectedNav === 'history'
-                      ? 'bg-white text-slate-950 font-bold shadow-md'
-                      : 'text-slate-300 hover:text-white hover:bg-white/5'
-                  }`}
+                  className={`px-3 py-1.5 rounded-full transition shrink-0 ${selectedNav === 'history'
+                    ? 'bg-white text-slate-950 font-bold shadow-md'
+                    : 'text-slate-300 hover:text-white hover:bg-white/5'
+                    }`}
                 >
                   Histórico
                 </button>
@@ -1924,11 +1973,10 @@ export const App: React.FC = () => {
                                   handleSelectNetflixProfile(prf);
                                 }
                               }}
-                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-xl transition cursor-pointer ${
-                                isCurrent
-                                  ? 'bg-cyan-500/15 border border-cyan-500/30 text-white'
-                                  : 'hover:bg-white/5 text-slate-300'
-                              }`}
+                              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-xl transition cursor-pointer ${isCurrent
+                                ? 'bg-cyan-500/15 border border-cyan-500/30 text-white'
+                                : 'hover:bg-white/5 text-slate-300'
+                                }`}
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <ProfileAvatarBadge avatarId={prf.avatarId} size="sm" />
@@ -2177,8 +2225,8 @@ export const App: React.FC = () => {
                             {item.mediaType === 'live'
                               ? 'TV'
                               : item.mediaType === 'movie'
-                              ? 'Filme'
-                              : 'Série'}
+                                ? 'Filme'
+                                : 'Série'}
                           </span>
                           <button
                             type="button"
@@ -2271,8 +2319,8 @@ export const App: React.FC = () => {
                               {item.mediaType === 'live'
                                 ? 'TV'
                                 : item.mediaType === 'movie'
-                                ? 'Filme'
-                                : 'Série'}
+                                  ? 'Filme'
+                                  : 'Série'}
                             </span>
                             {pct > 0 && (
                               <div className="absolute bottom-0 inset-x-0 h-1.5 bg-white/20">
@@ -2303,7 +2351,7 @@ export const App: React.FC = () => {
                 {selectedMediaType === 'live' ? (
                   <div className="flex-1 min-h-0">
                     <LiveTvGuideView
-                      channels={channels.filter((c) => c.mediaType === 'live')}
+                      channels={liveChannels}
                       favorites={favorites}
                       activeChannelId={undefined}
                       isParentalUnlocked={isParentalUnlocked}
@@ -2317,7 +2365,7 @@ export const App: React.FC = () => {
                   <div className="flex-1 min-h-0">
                     <OnDemandCatalogView
                       mediaType="movie"
-                      channels={channels.filter((c) => c.mediaType === 'movie')}
+                      channels={movieChannels}
                       favorites={favorites}
                       activeChannelId={undefined}
                       onSelectChannel={handleOpenMediaDetails}
@@ -2330,7 +2378,7 @@ export const App: React.FC = () => {
                   <div className="flex-1 min-h-0">
                     <OnDemandCatalogView
                       mediaType="series"
-                      channels={channels.filter((c) => c.mediaType === 'series')}
+                      channels={seriesChannels}
                       favorites={favorites}
                       activeChannelId={undefined}
                       onSelectChannel={handleOpenMediaDetails}
@@ -2422,11 +2470,10 @@ export const App: React.FC = () => {
                           key={opt.id}
                           type="button"
                           onClick={() => setUpscaling(opt.id)}
-                          className={`p-3 rounded-2xl text-left border transition ${
-                            upscaling === opt.id
-                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-neon-cyan'
-                              : 'bg-[#060a0f] border-slate-800 text-slate-400 hover:border-slate-700'
-                          }`}
+                          className={`p-3 rounded-2xl text-left border transition ${upscaling === opt.id
+                            ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-neon-cyan'
+                            : 'bg-[#060a0f] border-slate-800 text-slate-400 hover:border-slate-700'
+                            }`}
                         >
                           <p className="text-xs font-bold">{opt.label}</p>
                           <p className="text-[10px] text-slate-500 mt-0.5">{opt.desc}</p>
@@ -2452,11 +2499,10 @@ export const App: React.FC = () => {
                           key={opt.id}
                           type="button"
                           onClick={() => setZeroDelay(opt.id)}
-                          className={`p-3 rounded-2xl text-left border transition ${
-                            zeroDelay === opt.id
-                              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-neon-cyan'
-                              : 'bg-[#060a0f] border-slate-800 text-slate-400 hover:border-slate-700'
-                          }`}
+                          className={`p-3 rounded-2xl text-left border transition ${zeroDelay === opt.id
+                            ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-neon-cyan'
+                            : 'bg-[#060a0f] border-slate-800 text-slate-400 hover:border-slate-700'
+                            }`}
                         >
                           <p className="text-xs font-bold">{opt.label}</p>
                           <p className="text-[10px] text-slate-500 mt-0.5">{opt.desc}</p>
@@ -2476,11 +2522,10 @@ export const App: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setSmartAudio(!smartAudio)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
-                        smartAudio
-                          ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                          : 'bg-slate-800 border-slate-700 text-slate-500'
-                      }`}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${smartAudio
+                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                        : 'bg-slate-800 border-slate-700 text-slate-500'
+                        }`}
                     >
                       {smartAudio ? 'ATIVADO' : 'DESLIGADO'}
                     </button>
@@ -2519,11 +2564,10 @@ export const App: React.FC = () => {
                           }
                         }}
                         disabled={newPinInput.length !== 4}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                          newPinInput.length === 4
-                            ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-md'
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                        }`}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${newPinInput.length === 4
+                          ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-md'
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                          }`}
                       >
                         Salvar Novo PIN
                       </button>

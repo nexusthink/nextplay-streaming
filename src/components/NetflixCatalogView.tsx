@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ChannelItem, WatchHistoryItem } from '../types/iptv';
 import { StreamingHeroBanner } from './StreamingHeroBanner';
 import { StreamingRow } from './StreamingRow';
@@ -145,8 +145,87 @@ export const NetflixCatalogView: React.FC<NetflixCatalogViewProps> = ({
     };
   }, [safeChannels, history, favorites]);
 
+  const [visibleRowLimit, setVisibleRowLimit] = useState<number>(5);
+
+  const allCatalogRows = useMemo(() => {
+    const rows: Array<{
+      key: string;
+      title: string;
+      items: ChannelItem[];
+      aspect: 'poster' | 'landscape';
+    }> = [];
+
+    if (recentTvChannels.length > 0) {
+      rows.push({
+        key: 'row-recent-tv',
+        title: 'Últimos Canais Assistidos',
+        items: recentTvChannels,
+        aspect: 'landscape',
+      });
+    }
+    if (vodHistory.length > 0) {
+      rows.push({
+        key: 'row-vod-hist',
+        title: 'Continuar Assistindo (Filmes e Séries)',
+        items: vodHistory,
+        aspect: 'landscape',
+      });
+    }
+    if (favoriteItems.length > 0) {
+      rows.push({
+        key: 'row-favs',
+        title: 'Minha Lista',
+        items: favoriteItems,
+        aspect: 'poster',
+      });
+    }
+    if (popularMovies.length > 0) {
+      rows.push({
+        key: 'row-pop-movies',
+        title: 'Filmes Recomendados para Você',
+        items: popularMovies,
+        aspect: 'poster',
+      });
+    }
+    if (trendingSeries.length > 0) {
+      rows.push({
+        key: 'row-pop-series',
+        title: 'Séries em Destaque',
+        items: trendingSeries,
+        aspect: 'poster',
+      });
+    }
+    for (const cat of groupedCategories) {
+      rows.push({
+        key: `row-cat-${cat.name}`,
+        title: cat.name,
+        items: cat.items,
+        aspect: 'poster',
+      });
+    }
+    return rows;
+  }, [
+    recentTvChannels,
+    vodHistory,
+    favoriteItems,
+    popularMovies,
+    trendingSeries,
+    groupedCategories,
+  ]);
+
+  const visibleRows = allCatalogRows.slice(0, visibleRowLimit);
+
   return (
-    <div className="w-full h-full overflow-y-auto pr-1 pb-12 custom-scrollbar">
+    <div
+      className="w-full h-full overflow-y-auto pr-1 pb-12 custom-scrollbar"
+      onScroll={(e) => {
+        if (visibleRowLimit >= allCatalogRows.length) return;
+        const el = e.currentTarget;
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 450) {
+          setVisibleRowLimit((prev) => Math.min(allCatalogRows.length, prev + 3));
+        }
+      }}
+    >
       {/* 1. ROLO DE DESTAQUES AUTOMÁTICO (Filmes & Séries em Rotação) */}
       {featuredList.length > 0 && (
         <StreamingHeroBanner
@@ -157,82 +236,18 @@ export const NetflixCatalogView: React.FC<NetflixCatalogViewProps> = ({
         />
       )}
 
-      {/* 2. Fileira: Últimos Canais Assistidos (Exatamente os 3 últimos, se houver) */}
-      {recentTvChannels.length > 0 && (
+      {/* 2. Fileiras Virtualizadas com Índice Matemático O(1) para Controle Remoto */}
+      {visibleRows.map((row, idx) => (
         <StreamingRow
-          title="Últimos Canais Assistidos"
-          items={recentTvChannels}
+          key={row.key}
+          rowIndex={idx + 1}
+          title={row.title}
+          items={row.items}
           activeChannelId={activeChannelId}
           favorites={favorites}
           onSelectChannel={onSelectChannel}
           onToggleFavorite={onToggleFavorite}
-          aspect="landscape"
-        />
-      )}
-
-      {/* 3. Fileira: Continuar Assistindo Filmes & Séries */}
-      {vodHistory.length > 0 && (
-        <StreamingRow
-          title="Continuar Assistindo (Filmes e Séries)"
-          items={vodHistory}
-          activeChannelId={activeChannelId}
-          favorites={favorites}
-          onSelectChannel={onSelectChannel}
-          onToggleFavorite={onToggleFavorite}
-          aspect="landscape"
-        />
-      )}
-
-      {/* 4. Fileira: Minha Lista / Favoritos */}
-      {favoriteItems.length > 0 && (
-        <StreamingRow
-          title="Minha Lista"
-          items={favoriteItems}
-          activeChannelId={activeChannelId}
-          favorites={favorites}
-          onSelectChannel={onSelectChannel}
-          onToggleFavorite={onToggleFavorite}
-          aspect="poster"
-        />
-      )}
-
-      {/* 5. Fileira: Filmes em Alta */}
-      {popularMovies.length > 0 && (
-        <StreamingRow
-          title="Filmes Recomendados para Você"
-          items={popularMovies}
-          activeChannelId={activeChannelId}
-          favorites={favorites}
-          onSelectChannel={onSelectChannel}
-          onToggleFavorite={onToggleFavorite}
-          aspect="poster"
-        />
-      )}
-
-      {/* 6. Fileira: Séries Populares */}
-      {trendingSeries.length > 0 && (
-        <StreamingRow
-          title="Séries em Destaque"
-          items={trendingSeries}
-          activeChannelId={activeChannelId}
-          favorites={favorites}
-          onSelectChannel={onSelectChannel}
-          onToggleFavorite={onToggleFavorite}
-          aspect="poster"
-        />
-      )}
-
-      {/* 7. Fileiras Automáticas de Categorias On Demand */}
-      {groupedCategories.map((cat) => (
-        <StreamingRow
-          key={cat.name}
-          title={cat.name}
-          items={cat.items}
-          activeChannelId={activeChannelId}
-          favorites={favorites}
-          onSelectChannel={onSelectChannel}
-          onToggleFavorite={onToggleFavorite}
-          aspect="poster"
+          aspect={row.aspect}
         />
       ))}
     </div>

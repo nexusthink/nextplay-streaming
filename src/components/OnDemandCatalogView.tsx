@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ChannelItem } from '../types/iptv';
 import { isLegendadoItem } from '../services/subtitleEngine';
+import { optimizePosterUrl } from '../utils/imageOptimizer';
 
 interface OnDemandCatalogViewProps {
   mediaType: 'movie' | 'series';
@@ -920,118 +921,54 @@ export const OnDemandCatalogView: React.FC<OnDemandCatalogViewProps> = ({
         </div>
       )}
 
-      {/* 4. GRADE VERTICAL EFICAZ DE PÔSTERES (Vertical Poster Grid 2:3) */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 sm:gap-4 pb-4">
-        {visibleItems.map((item) => {
+      {/* 4. GRADE VERTICAL ULTRA-LEVE DE 1 CAMADA (Estilo Prime Video / Netflix TV) */}
+      <div
+        className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-3 sm:gap-3.5 pb-4"
+        style={{ contentVisibility: 'auto' }}
+      >
+        {visibleItems.map((item, idx) => {
           const isSelected = item.id === activeChannelId;
-          const isFav = favorites.has(item.id);
           const cleanTitle = sanitizeVodTitle(item.name);
           const year = extractYear(item.name, item.year);
-          const rating = extractRating(item);
-          const isLeg = isLegendadoItem(item);
+          const thumbUrl = optimizePosterUrl(item.logo, 'w185');
 
           return (
-            <div
+            <button
               key={item.id}
-              tabIndex={0}
-              role="button"
+              type="button"
               data-tv-card="true"
+              data-tv-grid-idx={String(idx)}
               onClick={() => (onOpenDetails ? onOpenDetails(item) : onSelectChannel(item))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  if (onOpenDetails) onOpenDetails(item);
-                  else onSelectChannel(item);
-                }
-              }}
-              className={`group relative flex flex-col rounded-xl bg-black border cursor-pointer overflow-hidden ${
-                isSelected
-                  ? 'border-cyan-400'
-                  : 'border-slate-800/80 hover:border-cyan-500/60'
+              className={`flex flex-col text-left rounded-lg bg-[#0a0f16] border cursor-pointer overflow-hidden ${
+                isSelected ? 'border-lime-400' : 'border-slate-800/80'
               }`}
             >
-              {/* Pôster Vertical 2:3 sobre Fundo Preto */}
-              <div className="relative w-full aspect-[2/3] bg-black overflow-hidden flex items-center justify-center">
-                {item.logo ? (
+              <div className="w-full aspect-[2/3] bg-black overflow-hidden">
+                {thumbUrl ? (
                   <img
-                    src={item.logo}
+                    src={thumbUrl}
                     alt={cleanTitle}
                     loading="lazy"
                     decoding="async"
-                    className="w-full h-full object-cover bg-black"
+                    width={150}
+                    height={225}
+                    className="w-full h-full object-cover bg-black pointer-events-none"
                     onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = 'none';
+                      (e.currentTarget as HTMLElement).style.visibility = 'hidden';
                     }}
                   />
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-3 text-center bg-black">
-                    <Film className="w-8 h-8 text-slate-700 mb-1.5" />
-                    <span className="text-[10px] text-slate-500 line-clamp-2">{cleanTitle}</span>
-                  </div>
-                )}
-
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80" />
-
-                {/* Badge de Nota */}
-                <div className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/85 text-[10px] font-black text-amber-300 border border-amber-500/30">
-                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                  <span>{rating}</span>
-                </div>
-
-                {/* Badge Dublado/Legendado */}
-                <div className="absolute top-2 right-2">
-                  {isLeg ? (
-                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-[9px] font-mono font-bold text-slate-950">
-                      LEG
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.5 rounded-md bg-teal-500 text-[9px] font-mono font-bold text-slate-950">
-                      DUB
-                    </span>
-                  )}
-                </div>
-
-                {/* Play Button Overlay */}
-                <div
-                  className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 flex items-center justify-center"
-                >
-                  <div className="w-10 h-10 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center">
-                    <Play className="w-5 h-5 fill-slate-950 ml-0.5" />
-                  </div>
-                </div>
-
-                {/* Favoritar */}
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleFavorite(item.id);
-                  }}
-                  className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/80 text-slate-400 hover:text-rose-400 border border-white/10 opacity-0 group-hover:opacity-100"
-                  title="Salvar na Minha Lista"
-                >
-                  <Heart className={`w-3 h-3 ${isFav ? 'fill-rose-500 text-rose-500' : ''}`} />
-                </button>
+                ) : null}
               </div>
 
-              {/* Info */}
-              <div className="p-3 flex flex-col justify-between flex-1">
-                <h4
-                  className="text-xs font-bold text-white group-hover:text-cyan-300 transition line-clamp-1"
-                  title={item.name}
-                >
+              <div className="p-2">
+                <h4 className="text-xs font-bold text-slate-100 truncate">
                   {cleanTitle}
                 </h4>
-
-                <div className="mt-1 flex items-center justify-between text-[11px] text-slate-400">
-                  <span>{year || (isMovie ? 'Filme' : 'Série')}</span>
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
-                    {item.containerExtension ? item.containerExtension.toUpperCase() : '4K'}
-                  </span>
-                </div>
+                <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                  {year || (isMovie ? 'Filme' : 'Série')}
+                </p>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>

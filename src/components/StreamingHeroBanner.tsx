@@ -10,6 +10,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { ChannelItem } from '../types/iptv';
+import { optimizePosterUrl } from '../utils/imageOptimizer';
 
 interface StreamingHeroBannerProps {
   items?: ChannelItem[];
@@ -77,7 +78,7 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
   const activeItem = bannerItems[currentIndex] || bannerItems[0];
   if (!activeItem) return null;
 
-  const bgImage = activeItem.backdropUrl || activeItem.logo;
+  const bgImage = optimizePosterUrl(activeItem.backdropUrl || activeItem.logo, 'w780');
   const displayName = cleanTitle(activeItem.name) || activeItem.name;
   const currentIsFavorite = favorites ? favorites.has(activeItem.id) : isFavorite;
   const isSeries = activeItem.mediaType === 'series';
@@ -194,7 +195,10 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
         {/* Botões de Ação (Assistir Agora + Minha Lista) */}
         <div className="flex items-center gap-2.5" data-tv-row="true">
           <button
+            type="button"
             data-tv-card="true"
+            data-tv-row-idx="0"
+            data-tv-col-idx="0"
             onClick={() => onPlay(activeItem)}
             className="flex items-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl bg-white hover:bg-slate-200 focus:bg-emerald-400 text-slate-950 font-black text-xs sm:text-sm shadow-lg cursor-pointer"
           >
@@ -203,7 +207,10 @@ export const StreamingHeroBanner: React.FC<StreamingHeroBannerProps> = ({
           </button>
 
           <button
+            type="button"
             data-tv-card="true"
+            data-tv-row-idx="0"
+            data-tv-col-idx="1"
             onClick={() => onToggleFavorite(activeItem.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold cursor-pointer ${
               currentIsFavorite
