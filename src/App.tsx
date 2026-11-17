@@ -185,6 +185,21 @@ export const App: React.FC = () => {
       return 0;
     }
   });
+  const [apkUpdateStatus, setApkUpdateStatus] = useState<'idle' | 'downloading' | 'installing' | 'error'>('idle');
+  const [apkUpdateProgress, setApkUpdateProgress] = useState<number>(0);
+
+  useEffect(() => {
+    (window as any).__nextplayApkUpdateEvent = (
+      status: 'downloading' | 'installing' | 'error',
+      progress: number
+    ) => {
+      setApkUpdateStatus(status);
+      setApkUpdateProgress(progress || 0);
+    };
+    return () => {
+      delete (window as any).__nextplayApkUpdateEvent;
+    };
+  }, []);
 
   // Ajustes de Imagem e Transmissão (Super Resolução Upscaling desativado por padrão para Decodificação 100% Hardware na TV)
   const [upscaling, setUpscaling] = useState<UpscalingMode>('off');
@@ -2710,19 +2725,49 @@ export const App: React.FC = () => {
                 </div>
               )}
 
+              {apkUpdateStatus === 'downloading' && (
+                <div className="space-y-1.5">
+                  <div className="w-full h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-400 transition-all"
+                      style={{ width: `${apkUpdateProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs font-bold text-emerald-400">
+                    Baixando atualização... {apkUpdateProgress}%
+                  </p>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
-                <a
-                  href={
-                    appConfig.apkDownloadUrl ||
-                    'https://nextplay.vps9818.panel.icontainer.run/download/nextplay.apk'
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
                   autoFocus
-                  className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 focus:bg-white text-slate-950 font-black text-xs uppercase tracking-wide transition cursor-pointer text-center"
+                  disabled={apkUpdateStatus === 'downloading'}
+                  onClick={() => {
+                    const apkUrl =
+                      appConfig.apkDownloadUrl ||
+                      'https://nextplay.vps9818.panel.icontainer.run/download/nextplay.apk';
+                    const nativeBridge = (window as any).NextPlayNative;
+                    if (nativeBridge && typeof nativeBridge.downloadAndInstallApk === 'function') {
+                      setApkUpdateStatus('downloading');
+                      setApkUpdateProgress(0);
+                      nativeBridge.downloadAndInstallApk(apkUrl);
+                    } else if (nativeBridge && typeof nativeBridge.openExternalUrl === 'function') {
+                      nativeBridge.openExternalUrl(apkUrl);
+                    } else {
+                      window.open(apkUrl, '_blank', 'noopener,noreferrer') ||
+                        (window.location.href = apkUrl);
+                    }
+                  }}
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 focus:bg-white text-slate-950 font-black text-xs uppercase tracking-wide transition cursor-pointer text-center disabled:opacity-60"
                 >
-                  Baixar Atualização Agora
-                </a>
+                  {apkUpdateStatus === 'downloading'
+                    ? `Baixando (${apkUpdateProgress}%)...`
+                    : apkUpdateStatus === 'installing'
+                    ? 'Abrindo Instalador...'
+                    : 'Baixar Atualização Agora'}
+                </button>
                 <button
                   type="button"
                   onClick={() => {

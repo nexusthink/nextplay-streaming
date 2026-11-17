@@ -286,7 +286,7 @@ app.get('/api/public/config', (_req, res) => {
       isDefault: Boolean(s.isDefault),
     }));
 
-  const serverCodeBuild = 253;
+  const serverCodeBuild = 254;
   const currentApkBuild = Math.max(serverCodeBuild, Number(db.settings.apkBuild) || serverCodeBuild);
 
   res.json({
@@ -299,7 +299,7 @@ app.get('/api/public/config', (_req, res) => {
       googleClientIdTv: db.settings.googleClientIdTv || '',
       googleSmartSwitch: db.settings.googleSmartSwitch !== false,
       allowDemoMode: db.settings.allowDemoMode !== false,
-      apkVersion: db.settings.apkVersion || '2.5.3',
+      apkVersion: db.settings.apkVersion || '2.5.4',
       apkBuild: currentApkBuild,
       apkDownloadUrl:
         db.settings.apkDownloadUrl || 'https://nextplay.vps9818.panel.icontainer.run/download/nextplay.apk',

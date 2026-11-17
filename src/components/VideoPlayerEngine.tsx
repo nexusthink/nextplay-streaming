@@ -15,8 +15,13 @@ import {
   X,
   Maximize2,
   Minimize2,
+  Cast,
+  Tv,
+  Smartphone,
+  Copy,
 } from 'lucide-react';
 import { ChannelItem, SeriesDetails, SeriesEpisode } from '../types/iptv';
+import { detectClientPlatform } from '../services/authService';
 
 interface VideoPlayerEngineProps {
   channel: ChannelItem | null;
@@ -91,6 +96,10 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
   const [showEpisodesDrawer, setShowEpisodesDrawer] = useState(false);
   const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number>(1);
   const [isFullExpanded, setIsFullExpanded] = useState(false);
+  const [showCastModal, setShowCastModal] = useState(false);
+  const [castCopied, setCastCopied] = useState(false);
+
+  const isTvDevice = React.useMemo(() => detectClientPlatform() === 'tv', []);
 
   const onToggleProxyRef = useRef(onToggleProxyBuffer);
   useEffect(() => {
@@ -482,6 +491,11 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
   // 1º Clique (com controles ocultos): Mostra opções do player, linha do tempo, etc.
   // 2º Clique (com controles já visíveis): Sai do player e volta para a tela anterior.
   const handlePlayerBack = useCallback(() => {
+    if (showCastModal) {
+      setShowCastModal(false);
+      wakeUpControls();
+      return 'cast_closed';
+    }
     if (showEpisodesDrawer) {
       setShowEpisodesDrawer(false);
       wakeUpControls();
@@ -498,7 +512,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
     }
     onClose?.();
     return 'player_closed';
-  }, [showEpisodesDrawer, showQualityMenu, controlsVisible, wakeUpControls, onClose]);
+  }, [showCastModal, showEpisodesDrawer, showQualityMenu, controlsVisible, wakeUpControls, onClose]);
 
   useEffect(() => {
     (window as any).__nextplayPlayerBack = handlePlayerBack;
@@ -507,7 +521,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
     };
   }, [handlePlayerBack]);
 
-  // Controle Remoto da TV dentro do Player em Tela Cheia
+  // Controle Remoto da TV dentro do Player em Tela Cheia (Navegação livre entre Voltar, Timeline e Botões)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || e.key === 'Backspace') {
@@ -517,7 +531,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
         return;
       }
 
-      if (showEpisodesDrawer || showQualityMenu) return;
+      if (showEpisodesDrawer || showQualityMenu || showCastModal) return;
 
       // Acorda a interface ao apertar qualquer botão do controle
       if (!controlsVisible) {
@@ -537,8 +551,70 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
           togglePlay();
           return;
         }
+        // Ao acordar os controles com ArrowDown/ArrowUp, foca direto no botão Pausar/Reproduzir
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const playBtn = containerRef.current?.querySelector<HTMLElement>('[data-player-play="true"]');
+          playBtn?.focus({ preventScroll: true });
+          return;
+        }
       } else {
         wakeUpControls();
+      }
+
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        const root = containerRef.current;
+        if (!root) return;
+        const current = document.activeElement as HTMLElement | null;
+        const curRowAttr = current?.getAttribute('data-player-row');
+
+        if (!current || !curRowAttr || !root.contains(current)) {
+          e.preventDefault();
+          const playBtn = root.querySelector<HTMLElement>('[data-player-play="true"]');
+          playBtn?.focus({ preventScroll: true });
+          return;
+        }
+
+        const curRow = parseInt(curRowAttr, 10);
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (curRow === 0) {
+            const r1 = root.querySelector<HTMLInputElement>('[data-player-row="1"]:not([disabled])');
+            const target = r1 || root.querySelector<HTMLElement>('[data-player-play="true"]');
+            target?.focus({ preventScroll: true });
+          } else if (curRow === 1) {
+            const target = root.querySelector<HTMLElement>('[data-player-play="true"]');
+            target?.focus({ preventScroll: true });
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (curRow === 2) {
+            const r1 = root.querySelector<HTMLInputElement>('[data-player-row="1"]:not([disabled])');
+            const target = r1 || root.querySelector<HTMLElement>('[data-player-row="0"]');
+            target?.focus({ preventScroll: true });
+          } else if (curRow === 1) {
+            const r0 = root.querySelector<HTMLElement>('[data-player-row="0"]');
+            r0?.focus({ preventScroll: true });
+          }
+          return;
+        }
+
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && curRow === 2) {
+          e.preventDefault();
+          const rowBtns = Array.from(root.querySelectorAll<HTMLElement>('[data-player-row="2"]'));
+          const idx = rowBtns.indexOf(current);
+          if (idx !== -1) {
+            const nextIdx = e.key === 'ArrowRight' ? idx + 1 : idx - 1;
+            if (nextIdx >= 0 && nextIdx < rowBtns.length) {
+              rowBtns[nextIdx].focus({ preventScroll: true });
+            }
+          }
+          return;
+        }
       }
 
       if (e.key === 'MediaPlayPause') {
@@ -557,6 +633,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [
     controlsVisible,
+    showCastModal,
     showEpisodesDrawer,
     showQualityMenu,
     wakeUpControls,
@@ -696,13 +773,14 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
             : 'opacity-0 pointer-events-none'
         }`}
       >
-        {/* Topo: Botão Voltar + Nome do Filme / Série / Canal */}
-        <div className="flex items-center justify-between px-6 py-5">
+        {/* Topo: Botão Voltar + Nome do Filme / Série / Canal + Espelhamento (Mobile/Tablet) */}
+        <div className="flex items-center justify-between gap-4 px-6 py-5">
           <div className="flex items-center gap-4 min-w-0">
             {onClose && (
               <button
                 type="button"
                 data-tv-back="true"
+                data-player-row="0"
                 onClick={(e) => {
                   e.stopPropagation();
                   onClose();
@@ -726,6 +804,24 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
               )}
             </div>
           </div>
+
+          {/* Botão de Espelhamento Chromecast / Miracast / DLNA (Exibido APENAS em Celular, Tablet e Web — oculto na TV) */}
+          {!isTvDevice && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowCastModal(true);
+                setShowQualityMenu(false);
+                setShowEpisodesDrawer(false);
+              }}
+              title="Espelhar na TV (Chromecast, Miracast, DLNA)"
+              className="px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 font-bold text-xs sm:text-sm flex items-center gap-2 shrink-0 cursor-pointer transition"
+            >
+              <Cast className="w-4 h-4" />
+              <span>Espelhar TV</span>
+            </button>
+          )}
         </div>
 
         {/* Base: Linha do Tempo + Botões Essenciais */}
@@ -742,6 +838,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
             <div className="relative flex-1 flex items-center">
               <input
                 type="range"
+                data-player-row="1"
                 min={0}
                 max={hasSeekableDuration ? duration : 100}
                 step={1}
@@ -774,6 +871,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
             <div className="flex items-center gap-3">
               <button
                 type="button"
+                data-player-row="2"
                 onClick={handleSeekBackward}
                 title="Retroceder 10 segundos"
                 className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 focus:bg-emerald-500 focus:text-slate-950 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer"
@@ -784,6 +882,8 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
 
               <button
                 type="button"
+                data-player-row="2"
+                data-player-play="true"
                 onClick={togglePlay}
                 title={isPlaying ? 'Pausar' : 'Reproduzir'}
                 className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 focus:bg-white text-slate-950 font-black text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer shadow-lg"
@@ -803,6 +903,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
 
               <button
                 type="button"
+                data-player-row="2"
                 onClick={handleSeekForward}
                 title="Avançar 10 segundos"
                 className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 focus:bg-emerald-500 focus:text-slate-950 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer"
@@ -818,6 +919,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
               {isSeries && seriesDetails && seriesDetails.seasons.length > 0 && (
                 <button
                   type="button"
+                  data-player-row="2"
                   onClick={() => {
                     setShowEpisodesDrawer((v) => !v);
                     setShowQualityMenu(false);
@@ -833,6 +935,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
               <div className="relative">
                 <button
                   type="button"
+                  data-player-row="2"
                   onClick={() => {
                     setShowQualityMenu((v) => !v);
                     setShowEpisodesDrawer(false);
@@ -918,6 +1021,7 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
               {/* Botão Maximizar / Minimizar Tela Full Cheia (Ideal para Celular e Tablet) */}
               <button
                 type="button"
+                data-player-row="2"
                 onClick={toggleFullExpand}
                 title={isFullExpanded ? 'Restaurar Tela' : 'Maximizar Tela Full Cheia'}
                 className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 focus:bg-emerald-500 focus:text-slate-950 text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer"
@@ -1013,6 +1117,149 @@ export const VideoPlayerEngine: React.FC<VideoPlayerEngineProps> = ({
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Espelhamento para Celular & Tablet (Chromecast / Miracast / DLNA) */}
+      {showCastModal && !isTvDevice && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowCastModal(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md bg-[#0c121b] border border-cyan-500/30 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
+                  <Cast className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-extrabold text-white">
+                    Espelhar na TV
+                  </h3>
+                  <p className="text-[11px] text-slate-400 truncate max-w-[210px]">
+                    {channel.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCastModal(false)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {/* 1. Chromecast (Google Cast / Remote Playback API) */}
+              <button
+                type="button"
+                onClick={async () => {
+                  const videoEl = videoRef.current as any;
+                  if (videoEl?.remote?.prompt) {
+                    try {
+                      await videoEl.remote.prompt();
+                      setShowCastModal(false);
+                      return;
+                    } catch {
+                      // fallback abaixo
+                    }
+                  }
+                  const nativeBridge = (window as any).NextPlayNative;
+                  if (nativeBridge?.openExternalCastPlayer) {
+                    nativeBridge.openExternalCastPlayer(channel.url, channel.name);
+                  } else if (nativeBridge?.openCastSettings) {
+                    nativeBridge.openCastSettings();
+                  }
+                }}
+                className="w-full p-3.5 rounded-xl bg-[#111926] hover:bg-[#162233] border border-slate-700/80 text-left flex items-center gap-3.5 cursor-pointer transition"
+              >
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/15 text-cyan-300 flex items-center justify-center shrink-0">
+                  <Cast className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-bold text-white">
+                    Chromecast / Google Cast
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Procura dispositivos Chromecast e Google TV na mesma rede Wi-Fi
+                  </p>
+                </div>
+              </button>
+
+              {/* 2. Miracast / Tela Sem Fio / Smart View */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nativeBridge = (window as any).NextPlayNative;
+                  if (nativeBridge?.openCastSettings) {
+                    nativeBridge.openCastSettings();
+                  } else {
+                    alert('Ative "Transmitir" ou "Smart View" no painel rápido do seu aparelho.');
+                  }
+                }}
+                className="w-full p-3.5 rounded-xl bg-[#111926] hover:bg-[#162233] border border-slate-700/80 text-left flex items-center gap-3.5 cursor-pointer transition"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-300 flex items-center justify-center shrink-0">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-bold text-white">
+                    Miracast / Tela Sem Fio (Smart View)
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Espelha a tela direto em TVs Samsung, LG, Roku, TCL e Android TV
+                  </p>
+                </div>
+              </button>
+
+              {/* 3. DLNA / Player Externo na Rede Local */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nativeBridge = (window as any).NextPlayNative;
+                  if (nativeBridge?.openExternalCastPlayer) {
+                    nativeBridge.openExternalCastPlayer(channel.url, channel.name);
+                  } else {
+                    window.open(channel.url, '_blank');
+                  }
+                }}
+                className="w-full p-3.5 rounded-xl bg-[#111926] hover:bg-[#162233] border border-slate-700/80 text-left flex items-center gap-3.5 cursor-pointer transition"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-300 flex items-center justify-center shrink-0">
+                  <Tv className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-bold text-white">
+                    DLNA / Receptor Smart TV
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Envia o vídeo direto para apps DLNA (Web Video Caster, BubbleUPnP, VLC)
+                  </p>
+                </div>
+              </button>
+
+              {/* 4. Copiar Link Direto do Stream */}
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(channel.url);
+                  setCastCopied(true);
+                  window.setTimeout(() => setCastCopied(false), 2500);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-bold text-slate-200 flex items-center justify-center gap-2 cursor-pointer transition"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{castCopied ? 'Link do Vídeo Copiado!' : 'Copiar Link Direto do Vídeo'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
